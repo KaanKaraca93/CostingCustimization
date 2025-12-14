@@ -1,0 +1,214 @@
+openapi: 3.0.3
+info:
+  title: PLM Costing Module API
+  description: |
+    API for PLM Costing Module data manipulation and integration.
+    
+    This API receives XML data from PLM system, extracts relevant information (ModuleId and other properties),
+    performs necessary data manipulations, and will integrate with PLM's patch APIs to write back to the system.
+    
+    **Base URL:** https://costingcalculations-4ece4d469e2a.herokuapp.com
+    
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: kaan.karaca@kblplus.com
+  license:
+    name: ISC
+    
+servers:
+  - url: https://costingcalculations-4ece4d469e2a.herokuapp.com
+    description: Production Server (Heroku)
+  - url: http://localhost:3000
+    description: Local Development Server
+
+tags:
+  - name: Health
+    description: Health check and monitoring endpoints
+  - name: Costing
+    description: Costing module operations
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health Check
+      description: Returns the health status of the API server
+      operationId: healthCheck
+      responses:
+        '200':
+          description: API is healthy and running
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "OK"
+                message: "PLM Costing API is running"
+                timestamp: "2025-12-14T18:33:33.590Z"
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/costing/process:
+    post:
+      tags:
+        - Costing
+      summary: Process PLM Workflow XML
+      description: |
+        Receives ProcessWorkflow XML from PLM system and extracts ModuleId.
+        
+        The XML should conform to the Infor OAGIS ProcessWorkflow schema.
+        The API parses the XML and extracts the ModuleId from the Property elements.
+        
+      operationId: processWorkflowXml
+      requestBody:
+        description: ProcessWorkflow XML document from PLM
+        required: true
+        content:
+          text/xml:
+            schema:
+              type: string
+              example: |
+                <?xml version="1.0" encoding="utf-8"?>
+                <ProcessWorkflow xmlns="http://schema.infor.com/InforOAGIS/2">
+                  <ApplicationArea>
+                    <Sender>
+                      <LogicalID>lid://infor.fashionplm.fplm</LogicalID>
+                      <ComponentID>FPLM</ComponentID>
+                    </Sender>
+                    <CreationDateTime>2025-12-14T17:57:43Z</CreationDateTime>
+                  </ApplicationArea>
+                  <DataArea>
+                    <Process>
+                      <TenantID>ATJZAMEWEF5P4SNV_TST</TenantID>
+                    </Process>
+                    <Workflow>
+                      <Status><Code>Initial</Code></Status>
+                      <WorkflowDefinitionCode>UPDATED_STYLE_OVERVIEW</WorkflowDefinitionCode>
+                      <Property>
+                        <NameValue name="ModuleId" type="StringType">9457</NameValue>
+                      </Property>
+                      <Property>
+                        <NameValue name="ModuleCode" type="StringType">I00000120101</NameValue>
+                      </Property>
+                      <Property>
+                        <NameValue name="ModuleName" type="StringType">BEL CANTASI</NameValue>
+                      </Property>
+                    </Workflow>
+                  </DataArea>
+                </ProcessWorkflow>
+      responses:
+        '200':
+          description: Successfully processed XML and extracted ModuleId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessSuccessResponse'
+              example:
+                success: true
+                moduleId: "9457"
+                timestamp: "2025-12-14T18:33:33.621Z"
+        '400':
+          description: Bad Request - No XML data or invalid format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "No XML data received"
+                message: "Request body is empty"
+        '404':
+          description: ModuleId not found in XML
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "ModuleId not found"
+                message: "ModuleId property not found in the XML"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Internal server error"
+                message: "XML parsing failed: Unexpected token"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Health status of the API
+          enum: [OK, ERROR]
+          example: "OK"
+        message:
+          type: string
+          description: Human-readable status message
+          example: "PLM Costing API is running"
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp
+          example: "2025-12-14T18:33:33.590Z"
+      required:
+        - status
+        - message
+        - timestamp
+
+    ProcessSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indicates successful processing
+          example: true
+        moduleId:
+          type: string
+          description: Extracted ModuleId from the XML
+          example: "9457"
+        timestamp:
+          type: string
+          format: date-time
+          description: Processing timestamp
+          example: "2025-12-14T18:33:33.621Z"
+      required:
+        - success
+        - moduleId
+        - timestamp
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type/category
+          example: "No XML data received"
+        message:
+          type: string
+          description: Detailed error message
+          example: "Request body is empty"
+      required:
+        - error
+        - message
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Bearer token authentication (for future implementation).
+        Currently, the API does not require authentication.
+
+security: []
+
