@@ -31,10 +31,6 @@ class PLMPatchService {
         Value: { IonApiRef: '$.KHDFValue' }
       },
       {
-        Id: { IonApiRef: '$.ALMUSDId' },
-        Value: { IonApiRef: '$.ALMUSDValue' }
-      },
-      {
         Id: { IonApiRef: '$.ALMTRYId' },
         Value: { IonApiRef: '$.ALMTRYValue' }
       }
