@@ -66,7 +66,14 @@ class PLMPatchService {
       { id: 'KumaşHedefMaliyet_extid', value: 'KumaşHedefMaliyet_extvalue' },
       { id: 'AlımFiyatı_TRY_extid', value: 'AlımFiyatı_TRY_extvalue' },
       { id: 'AlımTarget_USD_extid', value: 'AlımTarget_USD_extvalue' },
-      { id: 'AlımTarget_USD_105_extid', value: 'AlımTarget_USD_105_extvalue' }
+      { id: 'AlımTarget_USD_105_extid', value: 'AlımTarget_USD_105_extvalue' },
+      // Type=3 Cost Elements mapped to Extended Fields
+      { id: 'TKMS_extid', value: 'TKMS_extvalue' },
+      { id: 'TAST_extid', value: 'TAST_extvalue' },
+      { id: 'TISC_extid', value: 'TISC_extvalue' },
+      { id: 'TTRM_extid', value: 'TTRM_extvalue' },
+      { id: 'TISL_extid', value: 'TISL_extvalue' },
+      { id: 'TDGR_extid', value: 'TDGR_extvalue' }
     ];
 
     for (const field of extFieldMapping) {

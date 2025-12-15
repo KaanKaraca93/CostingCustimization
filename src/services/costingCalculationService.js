@@ -102,6 +102,16 @@ function processStyleToSegmentPSF(styleData) {
       'AlımTarget_USD': '93fa0034-ea93-4649-a2b1-43b905d01a49', // RHDF / GKUR
       'AlımTarget_USD_105': 'b3eeb0c5-f089-441c-a3ff-bfd5697ba30f' // (RHDF / GKUR) / 1.05
     };
+    
+    // Type=3 Cost Element to Extended Field mapping (calculated values)
+    const type3ToExtFieldMapping = {
+      'TKMS': '14a52574-591e-4082-83e7-6a401808b726',
+      'TAST': 'c645f6f2-d537-4234-87c1-7675677ffb86',
+      'TISC': 'a28b4eca-999c-4437-bb49-7fda0284993c',
+      'TTRM': '556a9af5-6350-4bce-ae83-f1453ec3659b',
+      'TISL': '40ea5b12-832b-41e9-aefb-e547d1e6884b',
+      'TDGR': 'bc11923a-8594-4f22-b2bb-ab7f5f558ba7'
+    };
 
     const result = {
       StyleId: styleId,
@@ -425,6 +435,27 @@ function processStyleToSegmentPSF(styleData) {
       }
     } else {
       console.log(`ℹ️  Cannot calculate new extended fields (RHDF=${rhdfValue}, GKUR=${gkurValue})`);
+    }
+    
+    // ===== MAP TYPE=3 COST ELEMENTS TO EXTENDED FIELDS =====
+    console.log('\n📋 Mapping Type=3 Cost Elements to Extended Fields...');
+    
+    for (const [elementCode, extFldId] of Object.entries(type3ToExtFieldMapping)) {
+      // Get calculated value for this element
+      const calculatedValue = calculatedValues.get(elementCode) || 0;
+      const roundedValue = Math.round(calculatedValue * 100) / 100;
+      
+      // Find the extended field
+      const extField = styleExtendedFieldValues.find(ef => ef.extFldId === extFldId);
+      
+      if (extField) {
+        // Add to result with dynamic key names
+        result[`${elementCode}_extid`] = extField.id;
+        result[`${elementCode}_extvalue`] = roundedValue;
+        console.log(`✅ ${elementCode} → Extended Field: Id=${extField.id}, Value=${roundedValue.toFixed(2)}`);
+      } else {
+        console.log(`ℹ️  Extended Field for ${elementCode} not found (skipping)`);
+      }
     }
 
     console.log('\n✅ Costing calculation completed for StyleId:', styleId);
