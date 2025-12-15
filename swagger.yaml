@@ -54,16 +54,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  /api/costing/process:
+  /api/workflow/process:
     post:
       tags:
         - Costing
-      summary: Process PLM Workflow XML
+      summary: Process PLM Workflow XML (Main Endpoint)
       description: |
-        Receives ProcessWorkflow XML from PLM system and extracts ModuleId.
+        **Main endpoint for all PLM workflow processing.**
         
-        The XML should conform to the Infor OAGIS ProcessWorkflow schema.
-        The API parses the XML and extracts the ModuleId from the Property elements.
+        This endpoint receives ProcessWorkflow XML from PLM system, determines the workflow type
+        based on WorkflowDefinitionCode, and routes to appropriate handler.
+        
+        **Supported Workflows:**
+        - `UPDATED_STYLE_OVERVIEW`: Routes to overview-to-costing flow
+          - Fetches style costing data from PLM
+          - Performs costing calculations using decision table
+          - PATCH results back to PLM (StyleCostingSupplierValue + StyleExtendedFieldValues)
+        
+        **Workflow Routing:**
+        The API automatically routes based on WorkflowDefinitionCode in the XML.
+        Unknown workflow types return 200 with "route not found" message.
+        
+        **Process Flow:**
+        1. Extract WorkflowDefinitionCode and ModuleId from XML
+        2. Route to appropriate workflow handler
+        3. Fetch data from PLM GET API
+        4. Perform calculations using decision table
+        5. PATCH results back to PLM
+        6. Return success response with calculated data
         
       operationId: processWorkflowXml
       requestBody:
@@ -104,15 +122,47 @@ paths:
                 </ProcessWorkflow>
       responses:
         '200':
-          description: Successfully processed XML and extracted ModuleId
+          description: Successfully processed workflow
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ProcessSuccessResponse'
-              example:
-                success: true
-                moduleId: "9457"
-                timestamp: "2025-12-14T18:33:33.621Z"
+                oneOf:
+                  - $ref: '#/components/schemas/WorkflowSuccessResponse'
+                  - $ref: '#/components/schemas/WorkflowUnknownResponse'
+              examples:
+                successfulCosting:
+                  summary: Successful Costing Calculation
+                  value:
+                    success: true
+                    workflow: "OVERVIEW_TO_COSTING"
+                    styleId: "9457"
+                    calculatedData:
+                      StyleId: 9457
+                      StyleCode: "I00000120101"
+                      BrandId: 4
+                      SubCategoryId: 41
+                      UserDefinedField5Id: 1
+                      Cluster: "016-E"
+                      SPSFValue: 4699
+                      MUValue: 4.8
+                      KHDFValue: 0
+                      ALMUSDValue: 18.54
+                      ALMTRYValue: 889.96
+                      SPSFId: 1295
+                      MUId: 1335
+                    patchResults:
+                      styleCostingSupplierValue: {}
+                      styleExtendedFieldValues: {}
+                    message: "Costing calculation and PATCH completed successfully"
+                    timestamp: "2025-12-15T10:00:00.000Z"
+                unknownWorkflow:
+                  summary: Unknown Workflow Type
+                  value:
+                    success: true
+                    message: "Workflow received but route not found"
+                    workflowType: "SOME_OTHER_WORKFLOW"
+                    moduleId: "9457"
+                    timestamp: "2025-12-15T10:00:00.000Z"
         '400':
           description: Bad Request - No XML data or invalid format
           content:
@@ -123,14 +173,27 @@ paths:
                 error: "No XML data received"
                 message: "Request body is empty"
         '404':
-          description: ModuleId not found in XML
+          description: Required data not found (ModuleId, WorkflowDefinitionCode, or Style data)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error: "ModuleId not found"
-                message: "ModuleId property not found in the XML"
+              examples:
+                noModuleId:
+                  summary: ModuleId not found
+                  value:
+                    error: "ModuleId not found"
+                    message: "ModuleId property not found in the XML"
+                noWorkflowCode:
+                  summary: WorkflowDefinitionCode not found
+                  value:
+                    error: "WorkflowDefinitionCode not found"
+                    message: "WorkflowDefinitionCode not found in the XML"
+                noStyle:
+                  summary: Style not found in PLM
+                  value:
+                    error: "Style not found"
+                    message: "No style data found for StyleId: 9457"
         '500':
           description: Internal Server Error
           content:
@@ -165,24 +228,91 @@ components:
         - message
         - timestamp
 
-    ProcessSuccessResponse:
+    WorkflowSuccessResponse:
       type: object
       properties:
         success:
           type: boolean
           description: Indicates successful processing
           example: true
+        workflow:
+          type: string
+          description: Workflow type that was processed
+          example: "OVERVIEW_TO_COSTING"
+        styleId:
+          type: string
+          description: Style ID (ModuleId) from XML
+          example: "9457"
+        calculatedData:
+          type: object
+          description: Calculated costing data with decision table values
+          properties:
+            StyleId:
+              type: integer
+            StyleCode:
+              type: string
+            BrandId:
+              type: integer
+            SubCategoryId:
+              type: integer
+            UserDefinedField5Id:
+              type: integer
+            Cluster:
+              type: string
+            SPSFValue:
+              type: number
+            MUValue:
+              type: number
+            KHDFValue:
+              type: number
+            ALMUSDValue:
+              type: number
+            ALMTRYValue:
+              type: number
+            SPSFId:
+              type: integer
+            MUId:
+              type: integer
+        patchResults:
+          type: object
+          description: Results from PATCH operations to PLM
+        message:
+          type: string
+          example: "Costing calculation and PATCH completed successfully"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2025-12-15T10:00:00.000Z"
+      required:
+        - success
+        - workflow
+        - styleId
+        - calculatedData
+        - message
+        - timestamp
+    
+    WorkflowUnknownResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Workflow received but route not found"
+        workflowType:
+          type: string
+          example: "UNKNOWN_WORKFLOW"
         moduleId:
           type: string
-          description: Extracted ModuleId from the XML
           example: "9457"
         timestamp:
           type: string
           format: date-time
-          description: Processing timestamp
-          example: "2025-12-14T18:33:33.621Z"
       required:
         - success
+        - message
+        - workflowType
         - moduleId
         - timestamp
 
