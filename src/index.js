@@ -20,6 +20,15 @@ app.use('/api', tokenRoutes);
 app.use('/api/costing', costingRoutes);
 app.use('/api/workflow', workflowRoutes);
 
+// Backward compatibility: Old endpoint forwards to new workflow endpoint
+const workflowRouter = require('./routes/workflow.routes');
+app.post('/api/costing/process', (req, res, next) => {
+  console.log('⚠️  [DEPRECATED] Using old endpoint: /api/costing/process');
+  console.log('✅ Forwarding to new endpoint: /api/workflow/process');
+  // Forward to workflow processor
+  workflowRouter.handle(req, res, next);
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -28,6 +37,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
 
 // 404 handler
 app.use((req, res) => {

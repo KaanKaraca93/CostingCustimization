@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ProcessWorkflow xmlns="http://schema.infor.com/InforOAGIS/2">
+  <ApplicationArea>
+    <Sender>
+      <LogicalID>lid://infor.fashionplm.fplm</LogicalID>
+      <ComponentID>FPLM</ComponentID>
+    </Sender>
+    <CreationDateTime>2025-12-15T10:00:00Z</CreationDateTime>
+  </ApplicationArea>
+  <DataArea>
+    <Process>
+      <TenantID>ATJZAMEWEF5P4SNV_TST</TenantID>
+    </Process>
+    <Workflow>
+      <Status><Code>Initial</Code></Status>
+      <WorkflowDefinitionCode>UPDATED_STYLE_OVERVIEW</WorkflowDefinitionCode>
+      <Property>
+        <NameValue name="ModuleId" type="StringType">158</NameValue>
+      </Property>
+      <Property>
+        <NameValue name="ModuleCode" type="StringType">IS1260002101</NameValue>
+      </Property>
+      <Property>
+        <NameValue name="ModuleName" type="StringType">TEST STYLE</NameValue>
+      </Property>
+    </Workflow>
+  </DataArea>
+</ProcessWorkflow>
+
