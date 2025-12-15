@@ -1,7 +1,9 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
-const xmlParser = require('./utils/xmlParser');
+const tokenRoutes = require('./routes/token.routes');
+const costingRoutes = require('./routes/costing.routes');
+const workflowRoutes = require('./routes/workflow.routes');
 
 // Load environment variables
 dotenv.config();
@@ -13,6 +15,11 @@ const PORT = process.env.PORT || 3000;
 app.use(bodyParser.text({ type: 'text/xml' }));
 app.use(bodyParser.json());
 
+// Routes
+app.use('/api', tokenRoutes);
+app.use('/api/costing', costingRoutes);
+app.use('/api/workflow', workflowRoutes);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -20,44 +27,6 @@ app.get('/health', (req, res) => {
     message: 'PLM Costing API is running',
     timestamp: new Date().toISOString()
   });
-});
-
-// Main endpoint to receive XML and extract ModuleId
-app.post('/api/costing/process', async (req, res) => {
-  try {
-    const xmlData = req.body;
-    
-    if (!xmlData) {
-      return res.status(400).json({ 
-        error: 'No XML data received',
-        message: 'Request body is empty'
-      });
-    }
-
-    // Parse XML and extract ModuleId
-    const moduleId = await xmlParser.extractModuleId(xmlData);
-    
-    if (!moduleId) {
-      return res.status(404).json({ 
-        error: 'ModuleId not found',
-        message: 'ModuleId property not found in the XML'
-      });
-    }
-
-    // Return JSON response with ModuleId
-    res.json({
-      success: true,
-      moduleId: moduleId,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('Error processing XML:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
-  }
 });
 
 // 404 handler

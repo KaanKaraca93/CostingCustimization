@@ -47,6 +47,57 @@ async function extractModuleId(xmlString) {
 }
 
 /**
+ * Extract WorkflowDefinitionCode from ProcessWorkflow XML
+ * @param {string} xmlString - XML string to parse
+ * @returns {Promise<string|null>} - WorkflowDefinitionCode or null if not found
+ */
+async function extractWorkflowDefinitionCode(xmlString) {
+  try {
+    const parser = new xml2js.Parser({
+      explicitArray: false,
+      ignoreAttrs: false,
+      mergeAttrs: false
+    });
+
+    const result = await parser.parseStringPromise(xmlString);
+    const workflow = result?.ProcessWorkflow?.DataArea?.Workflow;
+    
+    if (!workflow) {
+      return null;
+    }
+
+    return workflow.WorkflowDefinitionCode || null;
+
+  } catch (error) {
+    console.error('Error parsing WorkflowDefinitionCode:', error);
+    throw new Error(`XML parsing failed: ${error.message}`);
+  }
+}
+
+/**
+ * Extract complete workflow data from XML
+ * @param {string} xmlString - XML string to parse
+ * @returns {Promise<Object>} - Workflow data object
+ */
+async function extractWorkflowData(xmlString) {
+  try {
+    const [moduleId, workflowCode] = await Promise.all([
+      extractModuleId(xmlString),
+      extractWorkflowDefinitionCode(xmlString)
+    ]);
+
+    return {
+      moduleId,
+      workflowDefinitionCode: workflowCode
+    };
+
+  } catch (error) {
+    console.error('Error extracting workflow data:', error);
+    throw new Error(`Workflow data extraction failed: ${error.message}`);
+  }
+}
+
+/**
  * Extract multiple properties from XML
  * @param {string} xmlString - XML string to parse
  * @param {string[]} propertyNames - Array of property names to extract
@@ -91,6 +142,8 @@ async function extractProperties(xmlString, propertyNames) {
 
 module.exports = {
   extractModuleId,
+  extractWorkflowDefinitionCode,
+  extractWorkflowData,
   extractProperties
 };
 
