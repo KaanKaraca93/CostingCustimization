@@ -201,6 +201,128 @@ class PLMService {
     const rawData = await this.getStyleCosting(styleId);
     return this.parseStyleCostingData(rawData);
   }
+
+  /**
+   * Build OData query for style costing with BOO data
+   * @param {number} styleId - Style ID
+   * @returns {string} OData query string
+   */
+  buildStyleBooQuery(styleId) {
+    const booExpand = 'StyleBOO($expand=StyleBOLOperation)';
+    
+    const costingExpand = [
+      'STYLECOSTING(',
+        '$expand=',
+        'STYLECOSTELEMENTS(',
+          '$expand=STYLECOSTINGSUPPLIERVALS;',
+          '$select=Id,StyleCostingId,CostLevelId,Seq,Code,Name,Value,Type,Formula',
+        '),',
+        'STYLECOSTSUPPLIERS(',
+          '$expand=STYLESUPPLIER($select=Id,SupplierId,Code,SupplierName)',
+        ');',
+        '$select=Id,CostModelId,CurrencyId',
+      ')'
+    ].join('');
+
+    const colorwaysExpand = 'STYLECOLORWAYS($select=Code,Name,FreeFieldOne;$top=1)';
+    
+    const extendedFieldsExpand = [
+      'STYLEEXTENDEDFIELDVALUES(',
+        '$select=StyleId,Id,ExtFldId,NumberValue;',
+        '$expand=STYLEEXTENDEDFIELDS($select=Name)',
+      ')'
+    ].join('');
+
+    const select = '$select=StyleId,StyleCode,BrandId,SubCategoryId,UserDefinedField5Id,RetailPrice,NumericValue2';
+    const filter = `$filter=StyleId eq ${styleId}`;
+
+    return `?&$expand=${booExpand},${costingExpand},${colorwaysExpand},${extendedFieldsExpand}&${select}&${filter}`;
+  }
+
+  /**
+   * Get style costing data with BOO (Bill of Operations)
+   * @param {number} styleId - Style ID
+   * @returns {Object} Raw OData response with BOO data
+   */
+  async getStyleBoo(styleId) {
+    try {
+      console.log(`🔍 Fetching Style BOO data for StyleId: ${styleId}`);
+      
+      const query = this.buildStyleBooQuery(styleId);
+      const url = `${this.baseUrl}/STYLE${query}`;
+      
+      console.log('📋 GET URL:', url);
+
+      const authHeader = await tokenService.getAuthorizationHeader();
+
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': authHeader,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.value && response.data.value.length > 0) {
+        console.log('✅ Style BOO data retrieved successfully');
+        return response.data.value[0];
+      } else {
+        console.log('⚠️  No style BOO data found');
+        return null;
+      }
+
+    } catch (error) {
+      console.error('❌ Error fetching style BOO data:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Parse style BOO data to camelCase format
+   * @param {Object} styleData - Raw OData style data with BOO
+   * @returns {Object} Parsed style data
+   */
+  parseStyleBooData(styleData) {
+    const parsed = this.parseStyleCostingData(styleData);
+    
+    // Add BOO operations
+    if (styleData.StyleBOO && styleData.StyleBOO.length > 0) {
+      const boo = styleData.StyleBOO[0];
+      parsed.boo = {
+        id: boo.Id,
+        operations: []
+      };
+      
+      if (boo.StyleBOLOperation) {
+        parsed.boo.operations = boo.StyleBOLOperation.map(op => ({
+          id: op.Id,
+          styleBolId: op.StyleBolId,
+          operationListId: op.OperationListId,
+          operationId: op.OperationId,
+          sequence: op.Sequence,
+          subSequence: op.SubSequence,
+          cost: op.Cost || 0,
+          code: op.Code  // Add Code field for special logic
+        }));
+      }
+    }
+    
+    return parsed;
+  }
+
+  /**
+   * Get and parse style BOO data
+   * @param {string|number} styleId - Style ID
+   * @returns {Promise<Object>} Parsed style BOO data
+   */
+  async getAndParseStyleBoo(styleId) {
+    const rawData = await this.getStyleBoo(styleId);
+    if (!rawData) return null;
+    return this.parseStyleBooData(rawData);
+  }
 }
 
 // Create singleton instance

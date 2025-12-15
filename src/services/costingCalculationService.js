@@ -467,6 +467,350 @@ function processStyleToSegmentPSF(styleData) {
   }
 }
 
+/**
+ * Process Style BOO to Costing
+ * Similar to processStyleToSegmentPSF but uses BOO operation costs
+ * Special logic: Code="1" operation → SupplierId=2, Other operations → Other suppliers
+ * @param {Object} styleData - Parsed style data with BOO
+ * @returns {Object} Calculated costing data for PATCH
+ */
+function processBooToCosting(styleData) {
+  try {
+    console.log('\n📊 ===== BOO TO COSTING CALCULATION =====');
+    
+    // Extract basic style info
+    const styleInfo = styleData.styleInfo;
+    const styleId = styleInfo.styleId;
+    const styleCode = styleInfo.styleCode;
+    const brandId = styleInfo.brandId;
+    const subCategoryId = styleInfo.subCategoryId;
+    const udf5Id = styleInfo.userDefinedField5Id;
+
+    if (!styleId || !styleCode || !brandId || !subCategoryId || !udf5Id) {
+      throw new Error('Missing required fields: StyleId, StyleCode, BrandId, SubCategoryId, or UserDefinedField5Id');
+    }
+
+    console.log(`📋 Style Info: ID=${styleId}, Code=${styleCode}, Brand=${brandId}, SubCategory=${subCategoryId}, UDF5=${udf5Id}`);
+
+    // Extract Cluster from first colorway's FreeFieldOne
+    const styleColorways = styleData.colorways || [];
+    if (!styleColorways || styleColorways.length === 0) {
+      throw new Error('No StyleColorways found');
+    }
+
+    const cluster = styleColorways[0].freeFieldOne;
+    if (!cluster) {
+      throw new Error('Cluster (FreeFieldOne) not found in first StyleColorway');
+    }
+
+    console.log(`🎯 Cluster: ${cluster}`);
+
+    // Calculate BOO operation costs with special logic
+    let code1Cost = 0;  // For SupplierId=2 (Hedef Maliyet)
+    let otherOperationsCost = 0;  // For other suppliers
+    
+    if (styleData.boo && styleData.boo.operations) {
+      console.log(`📊 Processing ${styleData.boo.operations.length} BOO operations...`);
+      
+      for (const operation of styleData.boo.operations) {
+        const cost = operation.cost || 0;
+        const code = operation.code;
+        
+        if (code === '1') {
+          code1Cost += cost;
+          console.log(`   📌 Code="1" operation: Cost=${cost} (for SupplierId=2)`);
+        } else {
+          otherOperationsCost += cost;
+          console.log(`   📌 Code="${code}" operation: Cost=${cost} (for other suppliers)`);
+        }
+      }
+      
+      // Round to 2 decimals
+      code1Cost = Math.round(code1Cost * 100) / 100;
+      otherOperationsCost = Math.round(otherOperationsCost * 100) / 100;
+      
+      console.log(`✅ Code="1" Cost (SupplierId=2): ${code1Cost}`);
+      console.log(`✅ Other Operations Cost (Others): ${otherOperationsCost}`);
+    } else {
+      console.log('⚠️  No BOO operations found, costs = 0');
+    }
+
+    // Get StyleCosting
+    const styleCosting = styleData.costing;
+    if (!styleCosting) {
+      throw new Error('StyleCosting not found');
+    }
+
+    // Find all UNLOCKED suppliers and categorize them
+    const styleCostSuppliers = styleData.costSuppliers || [];
+    const unlockedSuppliers = styleCostSuppliers.filter(supplier => !supplier.isLock);
+    
+    // Separate suppliers by SupplierId
+    const supplier2 = unlockedSuppliers.find(s => s.supplierInfo?.supplierId === 2);
+    const otherSuppliers = unlockedSuppliers.filter(s => s.supplierInfo?.supplierId !== 2);
+    
+    console.log(`🔓 Unlocked Suppliers: ${unlockedSuppliers.length}`);
+    
+    if (supplier2) {
+      console.log(`   ⭐ SupplierId=2: Code="${supplier2.supplierInfo.code}", Name="${supplier2.supplierInfo.supplierName}", Id=${supplier2.id}`);
+    }
+    
+    otherSuppliers.forEach((supplier, index) => {
+      const supplierInfo = supplier.supplierInfo;
+      if (supplierInfo) {
+        console.log(`   ${index + 1}. SupplierId=${supplierInfo.supplierId}, Code="${supplierInfo.code}", Name="${supplierInfo.supplierName}", Id=${supplier.id}`);
+      }
+    });
+
+    if (unlockedSuppliers.length === 0) {
+      throw new Error("No unlocked suppliers found in StyleCostSuppliers");
+    }
+
+    console.log(`✅ Will write data for ${unlockedSuppliers.length} unlocked suppliers`);
+
+    // Find decision values from decision table (for other Type=1 elements)
+    const decisionValues = findDecisionValues(brandId, subCategoryId, udf5Id, cluster);
+    
+    if (!decisionValues) {
+      throw new Error(`No matching decision table entry found for BrandId=${brandId}, SubCategoryId=${subCategoryId}, UDF5Id=${udf5Id}, Cluster=${cluster}`);
+    }
+
+    console.log(`✅ Decision values found: {
+  BrandId: ${decisionValues.BrandId},
+  SubCategoryId: ${decisionValues.SubCategoryId},
+  UDF5Id: ${decisionValues.UDF5Id},
+  Cluster: '${decisionValues.Cluster}'
+}`);
+
+    // Get GKUR from decision values
+    const gkurValue = (decisionValues && decisionValues.HesaplamaKuru) || 48;
+
+    // Extended Field ID mapping
+    const extendedFieldMapping = {
+      'AlımFiyatı_USD': 'daa197bf-717f-4374-9b0c-5a19b8cb2f3a',
+      'SegmentPSF': 'b63395db-8252-4b69-b0bd-6506738081b6',
+      'KumaşHedefMaliyet': '45247062-689a-48ca-a4e3-79324c8cbab3',
+      'AlımFiyatı_TRY': '79cb5b20-3028-44d4-a85e-ed18c00af3c8',
+      'AlımTarget_USD': '93fa0034-ea93-4649-a2b1-43b905d01a49',
+      'AlımTarget_USD_105': 'b3eeb0c5-f089-441c-a3ff-bfd5697ba30f'
+    };
+    
+    // Type=3 Cost Element to Extended Field mapping
+    const type3ToExtFieldMapping = {
+      'TKMS': '14a52574-591e-4082-83e7-6a401808b726',
+      'TAST': 'c645f6f2-d537-4234-87c1-7675677ffb86',
+      'TISC': 'a28b4eca-999c-4437-bb49-7fda0284993c',
+      'TTRM': '556a9af5-6350-4bce-ae83-f1453ec3659b',
+      'TISL': '40ea5b12-832b-41e9-aefb-e547d1e6884b',
+      'TDGR': 'bc11923a-8594-4f22-b2bb-ab7f5f558ba7'
+    };
+
+    const result = {
+      StyleId: styleId,
+      StyleCode: styleCode,
+      BrandId: brandId,
+      SubCategoryId: subCategoryId,
+      UserDefinedField5Id: udf5Id,
+      Cluster: cluster,
+      supplierValues: []
+    };
+
+    const styleCostElements = styleData.costElements || [];
+    console.log(`📋 Total Cost Elements: ${styleCostElements.length}`);
+
+    // ===== WRITE AISC (BOO Cost with Special Logic) =====
+    console.log('\n🏭 Processing AISC (BOO Cost)...');
+    const aiscElement = styleCostElements.find(elem => elem.code === 'AISC');
+    
+    if (aiscElement) {
+      console.log(`📌 Found AISC element: Type=${aiscElement.type}, Name=${aiscElement.name}`);
+      const supplierVals = aiscElement.supplierValues || [];
+      
+      let foundCount = 0;
+      
+      // Write Code="1" cost to SupplierId=2
+      if (supplier2) {
+        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === supplier2.id);
+        if (targetVal) {
+          result.supplierValues.push({
+            Id: targetVal.Id,
+            Value: code1Cost,
+            elementCode: 'AISC',
+            supplierId: supplier2.id
+          });
+          foundCount++;
+          console.log(`   ✅ SupplierId=2: AISC=${code1Cost} (Code="1" operation)`);
+        }
+      }
+      
+      // Write other operations cost to other suppliers
+      for (const otherSupplier of otherSuppliers) {
+        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === otherSupplier.id);
+        if (targetVal) {
+          result.supplierValues.push({
+            Id: targetVal.Id,
+            Value: otherOperationsCost,
+            elementCode: 'AISC',
+            supplierId: otherSupplier.id
+          });
+          foundCount++;
+          console.log(`   ✅ SupplierId=${otherSupplier.supplierInfo.supplierId}: AISC=${otherOperationsCost} (Other operations)`);
+        }
+      }
+      
+      console.log(`✅ AISC: Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
+    } else {
+      console.warn(`⚠️  AISC cost element not found (skipping)`);
+    }
+
+    // ===== CALCULATE TYPE=3 ELEMENTS PER SUPPLIER =====
+    console.log('\n🧮 Calculating Type=3 (Calculated) Elements per supplier...');
+    
+    const type3Elements = styleCostElements.filter(elem => elem.type === 3 && elem.formula);
+    
+    // Calculate for each supplier with their specific AISC value
+    for (const unlockedSupplier of unlockedSuppliers) {
+      const supplierId = unlockedSupplier.supplierInfo?.supplierId;
+      const isSupplier2 = supplierId === 2;
+      const supplierAISC = isSupplier2 ? code1Cost : otherOperationsCost;
+      
+      console.log(`\n   📊 Calculating for Supplier ${supplierId} (AISC=${supplierAISC})...`);
+      
+      // Build override values for this supplier
+      const overrideValues = new Map();
+      
+      // Add AISC specific to this supplier
+      overrideValues.set('AISC', supplierAISC);
+      
+      // Add decision table values
+      if (decisionValues) {
+        overrideValues.set('SPSF', decisionValues.SegmentPSF || 0);
+        overrideValues.set('MU', decisionValues.MU || 0);
+        overrideValues.set('KHDF', decisionValues.KumaşHedefMaliyet || 0);
+        overrideValues.set('ALMTRY', decisionValues.AlımFiyatı_TRY || 0);
+        overrideValues.set('GKUR', decisionValues.HesaplamaKuru || 0);
+        overrideValues.set('KDV', decisionValues.KDV || 0);
+      }
+      
+      // Add VRG and NAVL for this supplier
+      const vrgValue = unlockedSupplier.countryId === 69 ? 1 : 1.38;
+      const navlValue = unlockedSupplier.countryId === 69 ? 1 : 1.08;
+      overrideValues.set('VRG', vrgValue);
+      overrideValues.set('NAVL', navlValue);
+      
+      // Add RPSF if available
+      if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
+        overrideValues.set('RPSF', styleInfo.retailPrice);
+      }
+      
+      // Add FOB if available
+      if (styleInfo.numericValue2 !== null && styleInfo.numericValue2 !== undefined) {
+        const fobValue = Math.round((styleInfo.numericValue2 * gkurValue) * 100) / 100;
+        overrideValues.set('FOB', fobValue);
+      }
+      
+      // Calculate Type=3 for this supplier
+      const calculatedValues = calculateAllFormulas(styleCostElements, overrideValues);
+      
+      // Store results for this supplier
+      for (const element of type3Elements) {
+        let calculatedValue = calculatedValues.get(element.code) || 0;
+        calculatedValue = Math.round(calculatedValue * 100) / 100;
+        
+        const supplierVals = element.supplierValues || [];
+        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
+        
+        if (targetVal) {
+          result.supplierValues.push({
+            Id: targetVal.Id,
+            Value: calculatedValue,
+            elementCode: element.code,
+            supplierId: unlockedSupplier.id
+          });
+          
+          console.log(`      ${element.code}: ${calculatedValue.toFixed(2)}`);
+        }
+      }
+      
+      // Store calculated values for SupplierId=2 for extended fields
+      if (isSupplier2) {
+        result.supplier2CalculatedValues = calculatedValues;
+      }
+    }
+
+    // ===== EXTENDED FIELDS (Using SupplierId=2 values) =====
+    console.log('\n📝 Processing Extended Fields (using SupplierId=2 values)...');
+    
+    const styleExtendedFieldValues = styleData.extendedFields || [];
+    const supplier2CalcValues = result.supplier2CalculatedValues || new Map();
+
+    // 1. Decision table extended fields
+    for (const [decisionKey, extFldId] of Object.entries(extendedFieldMapping)) {
+      let decisionValue = 0;
+      if (decisionValues && decisionValues[decisionKey] !== undefined) {
+        decisionValue = decisionValues[decisionKey];
+      }
+      decisionValue = Math.round(decisionValue * 100) / 100;
+
+      const extField = styleExtendedFieldValues.find(ef => ef.extFldId === extFldId);
+      if (extField) {
+        result[`${decisionKey}_extid`] = extField.id;
+        result[`${decisionKey}_extvalue`] = decisionValue;
+        console.log(`✅ Extended Field ${decisionKey}: Id=${extField.id}, Value=${decisionValue}`);
+      }
+    }
+
+    // 2. RHDF-based extended fields (using Supplier 2 RHDF)
+    const rhdfValue = supplier2CalcValues.get('RHDF') || 0;
+    if (rhdfValue > 0 && gkurValue > 0) {
+      const alimTargetUSD = Math.round((rhdfValue / gkurValue) * 100) / 100;
+      
+      const alimTargetExtField = styleExtendedFieldValues.find(
+        ef => ef.extFldId === extendedFieldMapping['AlımTarget_USD']
+      );
+      if (alimTargetExtField) {
+        result[`AlımTarget_USD_extid`] = alimTargetExtField.id;
+        result[`AlımTarget_USD_extvalue`] = alimTargetUSD;
+        console.log(`✅ AlımTarget_USD: ${alimTargetUSD.toFixed(2)} (Supplier 2 RHDF=${rhdfValue.toFixed(2)})`);
+      }
+      
+      const alimTargetUSD105 = Math.round((alimTargetUSD / 1.05) * 100) / 100;
+      const alimTarget105ExtField = styleExtendedFieldValues.find(
+        ef => ef.extFldId === extendedFieldMapping['AlımTarget_USD_105']
+      );
+      if (alimTarget105ExtField) {
+        result[`AlımTarget_USD_105_extid`] = alimTarget105ExtField.id;
+        result[`AlımTarget_USD_105_extvalue`] = alimTargetUSD105;
+        console.log(`✅ AlımTarget_USD_105: ${alimTargetUSD105.toFixed(2)}`);
+      }
+    }
+    
+    // 3. Type=3 to Extended Field mapping (using Supplier 2 values)
+    for (const [elementCode, extFldId] of Object.entries(type3ToExtFieldMapping)) {
+      const calculatedValue = supplier2CalcValues.get(elementCode) || 0;
+      const roundedValue = Math.round(calculatedValue * 100) / 100;
+      
+      const extField = styleExtendedFieldValues.find(ef => ef.extFldId === extFldId);
+      if (extField) {
+        result[`${elementCode}_extid`] = extField.id;
+        result[`${elementCode}_extvalue`] = roundedValue;
+        console.log(`✅ ${elementCode} → Extended Field: Id=${extField.id}, Value=${roundedValue.toFixed(2)} (Supplier 2)`);
+      }
+    }
+    
+    // Clean up temporary field
+    delete result.supplier2CalculatedValues;
+
+    console.log('\n✅ BOO Costing calculation completed for StyleId:', styleId);
+    return result;
+
+  } catch (error) {
+    console.error('❌ Error in processBooToCosting:', error.message);
+    throw error;
+  }
+}
+
 module.exports = {
-  processStyleToSegmentPSF
+  processStyleToSegmentPSF,
+  processBooToCosting
 };
