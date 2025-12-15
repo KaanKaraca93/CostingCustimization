@@ -68,15 +68,12 @@ class PLMService {
       // STYLECOSTING expansion
       'STYLECOSTING(',
         '$expand=',
-          // Style Cost Elements
+          // Style Cost Elements (NO FILTER - get all, we'll filter Type=3 in code)
           'STYLECOSTELEMENTS(',
-            '$filter=Code in(\'KHDF\',\'SPSF\',\'ALMUSD\',\'ALMTRY\',\'MU\');',
-            '$expand=STYLECOSTINGSUPPLIERVALS;',
-            '$select=Id,StyleCostingId,CostLevelId,Seq,Code,Name,Value',
+            '$expand=STYLECOSTINGSUPPLIERVALS',
           '),',
-          // Style Cost Suppliers
+          // Style Cost Suppliers (no $select - get all fields including IsLock)
           'STYLECOSTSUPPLIERS(',
-            '$select=Id,StyleCostingId,StyleSupplierId;',
             '$expand=STYLESUPPLIER(',
               '$select=Id,SupplierId,Code,SupplierName',
             ')',
@@ -94,7 +91,7 @@ class PLMService {
       ')'
     ].join('');
 
-    const select = '$select=StyleId,StyleCode,BrandId,SubCategoryId,UserDefinedField5Id';
+    const select = '$select=StyleId,StyleCode,BrandId,SubCategoryId,UserDefinedField5Id,RetailPrice,NumericValue2';
     const filter = `$filter=StyleId eq ${styleId}`;
 
     // Combine all parts
@@ -117,7 +114,9 @@ class PLMService {
         styleCode: styleData.StyleCode,
         brandId: styleData.BrandId,
         subCategoryId: styleData.SubCategoryId,
-        userDefinedField5Id: styleData.UserDefinedField5Id
+        userDefinedField5Id: styleData.UserDefinedField5Id,
+        retailPrice: styleData.RetailPrice || null,
+        numericValue2: styleData.NumericValue2 || null // MerchHedef
       },
       colorways: [],
       costing: null,
@@ -145,7 +144,7 @@ class PLMService {
         currencyId: costing.CurrencyId
       };
 
-      // Parse Cost Elements
+      // Parse Cost Elements (include Type and Formula fields)
       if (costing.StyleCostElements) {
         parsed.costElements = costing.StyleCostElements.map(element => ({
           id: element.Id,
@@ -155,6 +154,8 @@ class PLMService {
           code: element.Code,
           name: element.Name,
           value: element.Value,
+          type: element.Type, // Type=3 means calculated
+          formula: element.Formula || element.Calculation || null, // Formula for Type=3
           supplierValues: element.StyleCostingSupplierVals || []
         }));
       }
@@ -165,6 +166,8 @@ class PLMService {
           id: supplier.Id,
           styleCostingId: supplier.StyleCostingId,
           styleSupplierId: supplier.StyleSupplierId,
+          isLock: supplier.IsLock || false, // IsLock field for filtering
+          countryId: supplier.CountryId || null, // CountryId for VRG/NAVL calculation
           supplierInfo: supplier.StyleSupplier ? {
             id: supplier.StyleSupplier.Id,
             supplierId: supplier.StyleSupplier.SupplierId,

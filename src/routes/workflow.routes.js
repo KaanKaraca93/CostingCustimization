@@ -79,9 +79,9 @@ async function handleOverviewToCosting(moduleId, res) {
     console.log(`📥 Fetching style data for StyleId: ${moduleId}`);
 
     // 1. Get style costing data from PLM
-    const styleData = await plmService.getStyleCosting(moduleId);
+    const rawStyleData = await plmService.getStyleCosting(moduleId);
     
-    if (!styleData) {
+    if (!rawStyleData) {
       return res.status(404).json({
         error: 'Style not found',
         message: `No style data found for StyleId: ${moduleId}`
@@ -89,6 +89,9 @@ async function handleOverviewToCosting(moduleId, res) {
     }
 
     console.log('✅ Style data retrieved from PLM');
+
+    // Parse style data to camelCase format
+    const styleData = plmService.parseStyleCostingData(rawStyleData);
 
     // 2. Process costing calculations
     console.log('🔢 Processing costing calculations...');

@@ -17,24 +17,36 @@ class PLMPatchService {
    * @returns {Array} Payload array for PATCH request
    */
   buildStyleCostingSupplierValuePayload(calculatedData) {
-    const payload = [
-      {
-        Id: { IonApiRef: '$.SPSFId' },
-        Value: { IonApiRef: '$.SPSFValue' }
-      },
-      {
-        Id: { IonApiRef: '$.MUId' },
-        Value: { IonApiRef: '$.MUValue' }
-      },
-      {
-        Id: { IonApiRef: '$.KHDFId' },
-        Value: { IonApiRef: '$.KHDFValue' }
-      },
-      {
-        Id: { IonApiRef: '$.ALMTRYId' },
-        Value: { IonApiRef: '$.ALMTRYValue' }
+    const payload = [];
+
+    // Use the supplierValues array if available (multi-supplier support)
+    if (calculatedData.supplierValues && Array.isArray(calculatedData.supplierValues)) {
+      for (const supplierValue of calculatedData.supplierValues) {
+        payload.push({
+          Id: supplierValue.Id,
+          Value: supplierValue.Value
+        });
       }
-    ];
+      
+      console.log(`📊 Payload built for ${payload.length} supplier values`);
+      return payload;
+    }
+
+    // Fallback: Old method (for backward compatibility)
+    for (const key in calculatedData) {
+      if (key.endsWith('Id') && key !== 'StyleId' && key !== 'BrandId' && 
+          key !== 'SubCategoryId' && key !== 'UserDefinedField5Id') {
+        
+        const valueKey = key.replace('Id', 'Value');
+        
+        if (calculatedData[valueKey] !== undefined) {
+          payload.push({
+            Id: calculatedData[key],
+            Value: calculatedData[valueKey]
+          });
+        }
+      }
+    }
 
     return payload;
   }
@@ -45,28 +57,26 @@ class PLMPatchService {
    * @returns {Array} Payload array for PATCH request
    */
   buildStyleExtendedFieldValuesPayload(calculatedData) {
-    const payload = [
-      {
-        Id: { IonApiRef: '$.SPSF_extid' },
-        NumberValue: { IonApiRef: '$.SPSFValue' }
-      },
-      {
-        Id: { IonApiRef: '$.MU_extid' },
-        NumberValue: { IonApiRef: '$.MUValue' }
-      },
-      {
-        Id: { IonApiRef: '$.KHDF_extid' },
-        NumberValue: { IonApiRef: '$.KHDFValue' }
-      },
-      {
-        Id: { IonApiRef: '$.ALMUSD_extid' },
-        NumberValue: { IonApiRef: '$.ALMUSDValue' }
-      },
-      {
-        Id: { IonApiRef: '$.ALMTRY_extid' },
-        NumberValue: { IonApiRef: '$.ALMTRYValue' }
-      }
+    const payload = [];
+
+    // Direct array format: [{ "Id": 195840, "NumberValue": 2349 }, ...]
+    const extFieldMapping = [
+      { id: 'AlımFiyatı_USD_extid', value: 'AlımFiyatı_USD_extvalue' },
+      { id: 'SegmentPSF_extid', value: 'SegmentPSF_extvalue' },
+      { id: 'KumaşHedefMaliyet_extid', value: 'KumaşHedefMaliyet_extvalue' },
+      { id: 'AlımFiyatı_TRY_extid', value: 'AlımFiyatı_TRY_extvalue' },
+      { id: 'AlımTarget_USD_extid', value: 'AlımTarget_USD_extvalue' },
+      { id: 'AlımTarget_USD_105_extid', value: 'AlımTarget_USD_105_extvalue' }
     ];
+
+    for (const field of extFieldMapping) {
+      if (calculatedData[field.id] !== undefined && calculatedData[field.value] !== undefined) {
+        payload.push({
+          Id: calculatedData[field.id],
+          NumberValue: calculatedData[field.value]
+        });
+      }
+    }
 
     return payload;
   }
@@ -84,18 +94,17 @@ class PLMPatchService {
       const url = `${this.baseUrl}/STYLECOSTINGSUPPLIERVALUE`;
 
       console.log('📋 PATCH URL:', url);
-      console.log('📋 Calculated Data:', JSON.stringify(calculatedData, null, 2));
-      console.log('📋 Payload (with IonApiRef):', JSON.stringify(payload, null, 2));
+      console.log('📋 Payload:', JSON.stringify(payload, null, 2));
 
       // Get access token
       const authHeader = await tokenService.getAuthorizationHeader();
 
-      const response = await axios.patch(url, calculatedData, {
+      // Body is the payload array directly, no X-Infor-MongoQuery needed
+      const response = await axios.patch(url, payload, {
         headers: {
           'Authorization': authHeader,
           'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'X-Infor-MongoQuery': JSON.stringify(payload)
+          'Content-Type': 'application/json'
         }
       });
 
@@ -125,18 +134,17 @@ class PLMPatchService {
       const url = `${this.baseUrl}/STYLEEXTENDEDFIELDVALUES`;
 
       console.log('📋 PATCH URL:', url);
-      console.log('📋 Calculated Data:', JSON.stringify(calculatedData, null, 2));
-      console.log('📋 Payload (with IonApiRef):', JSON.stringify(payload, null, 2));
+      console.log('📋 Payload:', JSON.stringify(payload, null, 2));
 
       // Get access token
       const authHeader = await tokenService.getAuthorizationHeader();
 
-      const response = await axios.patch(url, calculatedData, {
+      // Body is the payload array directly, no X-Infor-MongoQuery needed
+      const response = await axios.patch(url, payload, {
         headers: {
           'Authorization': authHeader,
           'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'X-Infor-MongoQuery': JSON.stringify(payload)
+          'Content-Type': 'application/json'
         }
       });
 
