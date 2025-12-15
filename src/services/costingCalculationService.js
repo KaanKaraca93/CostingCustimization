@@ -505,9 +505,9 @@ function processBooToCosting(styleData) {
 
     console.log(`🎯 Cluster: ${cluster}`);
 
-    // Calculate BOO operation costs with special logic
-    let code1Cost = 0;  // For SupplierId=2 (Hedef Maliyet)
-    let otherOperationsCost = 0;  // For other suppliers
+    // Calculate BOO operation costs with logic
+    let code1Cost = 0;
+    let otherOperationsCost = 0;
     
     if (styleData.boo && styleData.boo.operations) {
       console.log(`📊 Processing ${styleData.boo.operations.length} BOO operations...`);
@@ -518,10 +518,10 @@ function processBooToCosting(styleData) {
         
         if (code === '1') {
           code1Cost += cost;
-          console.log(`   📌 Code="1" operation: Cost=${cost} (for SupplierId=2)`);
+          console.log(`   📌 Code="1" operation: Cost=${cost}`);
         } else {
           otherOperationsCost += cost;
-          console.log(`   📌 Code="${code}" operation: Cost=${cost} (for other suppliers)`);
+          console.log(`   📌 Code="${code}" operation: Cost=${cost}`);
         }
       }
       
@@ -529,10 +529,20 @@ function processBooToCosting(styleData) {
       code1Cost = Math.round(code1Cost * 100) / 100;
       otherOperationsCost = Math.round(otherOperationsCost * 100) / 100;
       
-      console.log(`✅ Code="1" Cost (SupplierId=2): ${code1Cost}`);
-      console.log(`✅ Other Operations Cost (Others): ${otherOperationsCost}`);
+      console.log(`✅ Code="1" Cost: ${code1Cost}`);
+      console.log(`✅ Other Operations Cost: ${otherOperationsCost}`);
     } else {
       console.log('⚠️  No BOO operations found, costs = 0');
+    }
+    
+    // Determine final AISC value based on logic
+    let finalAISC = 0;
+    if (otherOperationsCost > 0) {
+      finalAISC = otherOperationsCost;
+      console.log(`📌 Using Other Operations Cost for AISC: ${finalAISC}`);
+    } else {
+      finalAISC = code1Cost;
+      console.log(`📌 Using Code="1" Cost for AISC: ${finalAISC}`);
     }
 
     // Get StyleCosting
@@ -541,24 +551,15 @@ function processBooToCosting(styleData) {
       throw new Error('StyleCosting not found');
     }
 
-    // Find all UNLOCKED suppliers and categorize them
+    // Find all UNLOCKED suppliers
     const styleCostSuppliers = styleData.costSuppliers || [];
     const unlockedSuppliers = styleCostSuppliers.filter(supplier => !supplier.isLock);
     
-    // Separate suppliers by SupplierId
-    const supplier2 = unlockedSuppliers.find(s => s.supplierInfo?.supplierId === 2);
-    const otherSuppliers = unlockedSuppliers.filter(s => s.supplierInfo?.supplierId !== 2);
-    
     console.log(`🔓 Unlocked Suppliers: ${unlockedSuppliers.length}`);
-    
-    if (supplier2) {
-      console.log(`   ⭐ SupplierId=2: Code="${supplier2.supplierInfo.code}", Name="${supplier2.supplierInfo.supplierName}", Id=${supplier2.id}`);
-    }
-    
-    otherSuppliers.forEach((supplier, index) => {
+    unlockedSuppliers.forEach((supplier, index) => {
       const supplierInfo = supplier.supplierInfo;
       if (supplierInfo) {
-        console.log(`   ${index + 1}. SupplierId=${supplierInfo.supplierId}, Code="${supplierInfo.code}", Name="${supplierInfo.supplierName}", Id=${supplier.id}`);
+        console.log(`   ${index + 1}. Code="${supplierInfo.code}", Name="${supplierInfo.supplierName}", Id=${supplier.id}`);
       }
     });
 
@@ -566,7 +567,7 @@ function processBooToCosting(styleData) {
       throw new Error("No unlocked suppliers found in StyleCostSuppliers");
     }
 
-    console.log(`✅ Will write data for ${unlockedSuppliers.length} unlocked suppliers`);
+    console.log(`✅ Will write AISC=${finalAISC} to ${unlockedSuppliers.length} unlocked suppliers`);
 
     // Find decision values from decision table (for other Type=1 elements)
     const decisionValues = findDecisionValues(brandId, subCategoryId, udf5Id, cluster);
@@ -618,7 +619,7 @@ function processBooToCosting(styleData) {
     const styleCostElements = styleData.costElements || [];
     console.log(`📋 Total Cost Elements: ${styleCostElements.length}`);
 
-    // ===== WRITE AISC (BOO Cost with Special Logic) =====
+    // ===== WRITE AISC (Same value for all unlocked suppliers) =====
     console.log('\n🏭 Processing AISC (BOO Cost)...');
     const aiscElement = styleCostElements.find(elem => elem.code === 'AISC');
     
@@ -628,33 +629,18 @@ function processBooToCosting(styleData) {
       
       let foundCount = 0;
       
-      // Write Code="1" cost to SupplierId=2
-      if (supplier2) {
-        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === supplier2.id);
+      // Write same AISC value to ALL unlocked suppliers
+      for (const unlockedSupplier of unlockedSuppliers) {
+        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
         if (targetVal) {
           result.supplierValues.push({
             Id: targetVal.Id,
-            Value: code1Cost,
+            Value: finalAISC,
             elementCode: 'AISC',
-            supplierId: supplier2.id
+            supplierId: unlockedSupplier.id
           });
           foundCount++;
-          console.log(`   ✅ SupplierId=2: AISC=${code1Cost} (Code="1" operation)`);
-        }
-      }
-      
-      // Write other operations cost to other suppliers
-      for (const otherSupplier of otherSuppliers) {
-        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === otherSupplier.id);
-        if (targetVal) {
-          result.supplierValues.push({
-            Id: targetVal.Id,
-            Value: otherOperationsCost,
-            elementCode: 'AISC',
-            supplierId: otherSupplier.id
-          });
-          foundCount++;
-          console.log(`   ✅ SupplierId=${otherSupplier.supplierInfo.supplierId}: AISC=${otherOperationsCost} (Other operations)`);
+          console.log(`   ✅ Supplier ${unlockedSupplier.id}: AISC=${finalAISC}`);
         }
       }
       
@@ -663,61 +649,60 @@ function processBooToCosting(styleData) {
       console.warn(`⚠️  AISC cost element not found (skipping)`);
     }
 
-    // ===== CALCULATE TYPE=3 ELEMENTS PER SUPPLIER =====
-    console.log('\n🧮 Calculating Type=3 (Calculated) Elements per supplier...');
+    // ===== BUILD OVERRIDE VALUES FOR TYPE=3 CALCULATION =====
+    console.log('\n🧮 Preparing values for Type=3 calculation...');
+    
+    const overrideValues = new Map();
+    
+    // Add AISC
+    overrideValues.set('AISC', finalAISC);
+    
+    // Add decision table values
+    if (decisionValues) {
+      overrideValues.set('SPSF', decisionValues.SegmentPSF || 0);
+      overrideValues.set('MU', decisionValues.MU || 0);
+      overrideValues.set('KHDF', decisionValues.KumaşHedefMaliyet || 0);
+      overrideValues.set('ALMTRY', decisionValues.AlımFiyatı_TRY || 0);
+      overrideValues.set('GKUR', decisionValues.HesaplamaKuru || 0);
+      overrideValues.set('KDV', decisionValues.KDV || 0);
+    }
+    
+    // Add VRG and NAVL (use first supplier)
+    if (unlockedSuppliers.length > 0) {
+      const firstSupplier = unlockedSuppliers[0];
+      const vrgValue = firstSupplier.countryId === 69 ? 1 : 1.38;
+      const navlValue = firstSupplier.countryId === 69 ? 1 : 1.08;
+      overrideValues.set('VRG', vrgValue);
+      overrideValues.set('NAVL', navlValue);
+    }
+    
+    // Add RPSF if available
+    if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
+      overrideValues.set('RPSF', styleInfo.retailPrice);
+    }
+    
+    // Add FOB if available
+    if (styleInfo.numericValue2 !== null && styleInfo.numericValue2 !== undefined) {
+      const fobValue = Math.round((styleInfo.numericValue2 * gkurValue) * 100) / 100;
+      overrideValues.set('FOB', fobValue);
+    }
+    
+    console.log(`   📊 Override values prepared: ${overrideValues.size} values (AISC=${finalAISC})`);
+
+    // ===== CALCULATE TYPE=3 ELEMENTS (Same for all suppliers) =====
+    console.log('\n🧮 Calculating Type=3 (Calculated) Elements...');
+    const calculatedValues = calculateAllFormulas(styleCostElements, overrideValues);
     
     const type3Elements = styleCostElements.filter(elem => elem.type === 3 && elem.formula);
     
-    // Calculate for each supplier with their specific AISC value
-    for (const unlockedSupplier of unlockedSuppliers) {
-      const supplierId = unlockedSupplier.supplierInfo?.supplierId;
-      const isSupplier2 = supplierId === 2;
-      const supplierAISC = isSupplier2 ? code1Cost : otherOperationsCost;
+    for (const element of type3Elements) {
+      let calculatedValue = calculatedValues.get(element.code) || 0;
+      calculatedValue = Math.round(calculatedValue * 100) / 100;
       
-      console.log(`\n   📊 Calculating for Supplier ${supplierId} (AISC=${supplierAISC})...`);
+      const supplierVals = element.supplierValues || [];
       
-      // Build override values for this supplier
-      const overrideValues = new Map();
-      
-      // Add AISC specific to this supplier
-      overrideValues.set('AISC', supplierAISC);
-      
-      // Add decision table values
-      if (decisionValues) {
-        overrideValues.set('SPSF', decisionValues.SegmentPSF || 0);
-        overrideValues.set('MU', decisionValues.MU || 0);
-        overrideValues.set('KHDF', decisionValues.KumaşHedefMaliyet || 0);
-        overrideValues.set('ALMTRY', decisionValues.AlımFiyatı_TRY || 0);
-        overrideValues.set('GKUR', decisionValues.HesaplamaKuru || 0);
-        overrideValues.set('KDV', decisionValues.KDV || 0);
-      }
-      
-      // Add VRG and NAVL for this supplier
-      const vrgValue = unlockedSupplier.countryId === 69 ? 1 : 1.38;
-      const navlValue = unlockedSupplier.countryId === 69 ? 1 : 1.08;
-      overrideValues.set('VRG', vrgValue);
-      overrideValues.set('NAVL', navlValue);
-      
-      // Add RPSF if available
-      if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
-        overrideValues.set('RPSF', styleInfo.retailPrice);
-      }
-      
-      // Add FOB if available
-      if (styleInfo.numericValue2 !== null && styleInfo.numericValue2 !== undefined) {
-        const fobValue = Math.round((styleInfo.numericValue2 * gkurValue) * 100) / 100;
-        overrideValues.set('FOB', fobValue);
-      }
-      
-      // Calculate Type=3 for this supplier
-      const calculatedValues = calculateAllFormulas(styleCostElements, overrideValues);
-      
-      // Store results for this supplier
-      for (const element of type3Elements) {
-        let calculatedValue = calculatedValues.get(element.code) || 0;
-        calculatedValue = Math.round(calculatedValue * 100) / 100;
-        
-        const supplierVals = element.supplierValues || [];
+      let foundCount = 0;
+      for (const unlockedSupplier of unlockedSuppliers) {
         const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
         
         if (targetVal) {
@@ -727,22 +712,17 @@ function processBooToCosting(styleData) {
             elementCode: element.code,
             supplierId: unlockedSupplier.id
           });
-          
-          console.log(`      ${element.code}: ${calculatedValue.toFixed(2)}`);
+          foundCount++;
         }
       }
       
-      // Store calculated values for SupplierId=2 for extended fields
-      if (isSupplier2) {
-        result.supplier2CalculatedValues = calculatedValues;
-      }
+      console.log(`   ✅ ${element.code} (Type=3): Calculated=${calculatedValue.toFixed(2)}, Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
     }
 
-    // ===== EXTENDED FIELDS (Using SupplierId=2 values) =====
-    console.log('\n📝 Processing Extended Fields (using SupplierId=2 values)...');
+    // ===== EXTENDED FIELDS =====
+    console.log('\n📝 Processing Extended Fields...');
     
     const styleExtendedFieldValues = styleData.extendedFields || [];
-    const supplier2CalcValues = result.supplier2CalculatedValues || new Map();
 
     // 1. Decision table extended fields
     for (const [decisionKey, extFldId] of Object.entries(extendedFieldMapping)) {
@@ -760,8 +740,8 @@ function processBooToCosting(styleData) {
       }
     }
 
-    // 2. RHDF-based extended fields (using Supplier 2 RHDF)
-    const rhdfValue = supplier2CalcValues.get('RHDF') || 0;
+    // 2. RHDF-based extended fields
+    const rhdfValue = calculatedValues.get('RHDF') || 0;
     if (rhdfValue > 0 && gkurValue > 0) {
       const alimTargetUSD = Math.round((rhdfValue / gkurValue) * 100) / 100;
       
@@ -771,7 +751,7 @@ function processBooToCosting(styleData) {
       if (alimTargetExtField) {
         result[`AlımTarget_USD_extid`] = alimTargetExtField.id;
         result[`AlımTarget_USD_extvalue`] = alimTargetUSD;
-        console.log(`✅ AlımTarget_USD: ${alimTargetUSD.toFixed(2)} (Supplier 2 RHDF=${rhdfValue.toFixed(2)})`);
+        console.log(`✅ AlımTarget_USD: ${alimTargetUSD.toFixed(2)} (RHDF=${rhdfValue.toFixed(2)})`);
       }
       
       const alimTargetUSD105 = Math.round((alimTargetUSD / 1.05) * 100) / 100;
@@ -785,21 +765,18 @@ function processBooToCosting(styleData) {
       }
     }
     
-    // 3. Type=3 to Extended Field mapping (using Supplier 2 values)
+    // 3. Type=3 to Extended Field mapping
     for (const [elementCode, extFldId] of Object.entries(type3ToExtFieldMapping)) {
-      const calculatedValue = supplier2CalcValues.get(elementCode) || 0;
+      const calculatedValue = calculatedValues.get(elementCode) || 0;
       const roundedValue = Math.round(calculatedValue * 100) / 100;
       
       const extField = styleExtendedFieldValues.find(ef => ef.extFldId === extFldId);
       if (extField) {
         result[`${elementCode}_extid`] = extField.id;
         result[`${elementCode}_extvalue`] = roundedValue;
-        console.log(`✅ ${elementCode} → Extended Field: Id=${extField.id}, Value=${roundedValue.toFixed(2)} (Supplier 2)`);
+        console.log(`✅ ${elementCode} → Extended Field: Id=${extField.id}, Value=${roundedValue.toFixed(2)}`);
       }
     }
-    
-    // Clean up temporary field
-    delete result.supplier2CalculatedValues;
 
     console.log('\n✅ BOO Costing calculation completed for StyleId:', styleId);
     return result;
