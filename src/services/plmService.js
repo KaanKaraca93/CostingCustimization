@@ -323,6 +323,113 @@ class PLMService {
     if (!rawData) return null;
     return this.parseStyleBooData(rawData);
   }
+
+  /**
+   * Build OData query for style costing with BOM data
+   * @param {number} styleId - Style ID
+   * @returns {string} OData query string
+   */
+  buildStyleBomQuery(styleId) {
+    // Using exact format that works in Postman, with Type and Formula added for calculations
+    const bomExpand = 'StyleBOM($expand=BOMLine($select=Id,Quantity,Code,Name,Placement2,PurchasePrice,CurrencyId))';
+    
+    const costingExpand = 'STYLECOSTING($expand=STYLECOSTELEMENTS($expand=STYLECOSTINGSUPPLIERVALS;$select=Id,StyleCostingId,Code,Name,Value,Type,Formula),STYLECOSTSUPPLIERS($expand=STYLESUPPLIER($select=Id,SupplierId,Code,SupplierName)); $select=Id, CostModelId, CurrencyId)';
+
+    const colorwaysExpand = 'STYLECOLORWAYS($select=Code,Name,FreeFieldOne;$top=1)';
+    
+    const extendedFieldsExpand = 'STYLEEXTENDEDFIELDVALUES($select=StyleId,Id,ExtFldId,NumberValue; $expand=STYLEEXTENDEDFIELDS($select=Name))';
+
+    const select = '$select=StyleId, StyleCode, BrandId, SubCategoryId, UserDefinedField5Id,RetailPrice,NumericValue2';
+    const filter = `$filter=StyleId eq ${styleId}`;
+
+    return `?&$expand=${bomExpand},${costingExpand},${colorwaysExpand},${extendedFieldsExpand}&${select}&${filter}`;
+  }
+
+  /**
+   * Get style costing data with BOM (Bill of Materials)
+   * @param {number} styleId - Style ID
+   * @returns {Object} Raw OData response with BOM data
+   */
+  async getStyleBom(styleId) {
+    try {
+      console.log(`🔍 Fetching Style BOM data for StyleId: ${styleId}`);
+      
+      const query = this.buildStyleBomQuery(styleId);
+      const url = `${this.baseUrl}/STYLE${query}`;
+      
+      console.log('📋 GET URL:', url);
+
+      const authHeader = await tokenService.getAuthorizationHeader();
+
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': authHeader,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.value && response.data.value.length > 0) {
+        console.log('✅ Style BOM data retrieved successfully');
+        return response.data.value[0];
+      } else {
+        console.log('⚠️  No style BOM data found');
+        return null;
+      }
+
+    } catch (error) {
+      console.error('❌ Error fetching style BOM data:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Parse style BOM data to camelCase format
+   * @param {Object} styleData - Raw OData style data with BOM
+   * @returns {Object} Parsed style data
+   */
+  parseStyleBomData(styleData) {
+    const parsed = this.parseStyleCostingData(styleData);
+    
+    // Add BOM lines - collect from all StyleBOM entries
+    if (styleData.StyleBOM && styleData.StyleBOM.length > 0) {
+      parsed.bom = {
+        bomLines: []
+      };
+      
+      // Iterate through all StyleBOM entries and collect BOMLines
+      for (const bomEntry of styleData.StyleBOM) {
+        if (bomEntry.BOMLine && bomEntry.BOMLine.length > 0) {
+          const lines = bomEntry.BOMLine.map(line => ({
+            id: line.Id,
+            quantity: line.Quantity || 0,
+            code: line.Code,
+            name: line.Name,
+            placement2: line.Placement2,  // Multi-select field, comma-separated
+            purchasePrice: line.PurchasePrice || 0,
+            currencyId: line.CurrencyId
+          }));
+          parsed.bom.bomLines.push(...lines);
+        }
+      }
+    }
+    
+    return parsed;
+  }
+
+  /**
+   * Get and parse style BOM data
+   * @param {string|number} styleId - Style ID
+   * @returns {Promise<Object>} Parsed style BOM data
+   */
+  async getAndParseStyleBom(styleId) {
+    const rawData = await this.getStyleBom(styleId);
+    if (!rawData) return null;
+    return this.parseStyleBomData(rawData);
+  }
 }
 
 // Create singleton instance

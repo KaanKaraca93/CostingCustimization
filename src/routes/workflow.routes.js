@@ -3,6 +3,7 @@ const router = express.Router();
 const xmlParser = require('../utils/xmlParser');
 const plmService = require('../services/plmService');
 const costingCalculationService = require('../services/costingCalculationService');
+const bomCalculationService = require('../services/bomCalculationService');
 const plmPatchService = require('../services/plmPatchService');
 
 /**
@@ -59,6 +60,9 @@ router.post('/process', async (req, res) => {
       
       case 'UPDATED_STYLE_BOO':
         return await handleBooToCosting(workflowData.moduleId, res);
+      
+      case 'UPDATED_STYLE_BOM':
+        return await handleBomToCosting(workflowData.moduleId, res);
       
       default:
         console.log(`⚠️  Unknown workflow type: ${workflowData.workflowDefinitionCode}`);
@@ -208,6 +212,134 @@ async function handleBooToCosting(moduleId, res) {
       errorCode: 'BOO_TO_COSTING_ERROR',
       error: error.message,
       message: 'Error processing BOO_TO_COSTING workflow',
+      styleId: moduleId,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+/**
+ * Handle UPDATED_STYLE_BOM workflow
+ * @param {string} moduleId - Style ID from XML
+ * @param {Object} res - Express response object
+ */
+async function handleBomToCosting(moduleId, res) {
+  try {
+    console.log('\n🎯 Route: BOM_TO_COSTING');
+    console.log(`📥 Fetching style BOM data for StyleId: ${moduleId}`);
+
+    // 1. Get style BOM data from PLM
+    const styleData = await plmService.getAndParseStyleBom(moduleId);
+    
+    if (!styleData) {
+      return res.status(200).json({
+        success: false,
+        errorCode: 'STYLE_NOT_FOUND',
+        error: 'Style not found',
+        message: `No style data found for StyleId: ${moduleId}`,
+        styleId: moduleId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log('✅ Style BOM data retrieved from PLM');
+
+    // 2. Process costing calculations with BOM data
+    console.log('🔢 Processing costing calculations with BOM data...');
+    const calculatedData = bomCalculationService.processBomToCosting(styleData);
+    
+    console.log('✅ Costing calculations completed');
+
+    // 3. PATCH data back to PLM
+    console.log('💾 PATCH data back to PLM...');
+    const patchResults = await plmPatchService.patchCostingData(calculatedData);
+    
+    console.log('✅ PATCH operations completed');
+
+    // Return result - ALWAYS 200
+    return res.status(200).json({
+      success: true,
+      workflow: 'BOM_TO_COSTING',
+      styleId: moduleId,
+      bomLinesCount: styleData.bom?.lines?.length || 0,
+      calculatedData: calculatedData,
+      patchResults: patchResults,
+      message: 'BOM costing calculation and PATCH completed successfully',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error in handleBomToCosting:', error);
+    // ALWAYS return 200, with error details
+    return res.status(200).json({
+      success: false,
+      errorCode: 'BOM_TO_COSTING_ERROR',
+      error: error.message,
+      message: 'Error processing BOM_TO_COSTING workflow',
+      styleId: moduleId,
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+/**
+ * Handle UPDATED_STYLE_BOM workflow
+ * @param {string} moduleId - Style ID from XML
+ * @param {Object} res - Express response object
+ */
+async function handleBomToCosting(moduleId, res) {
+  try {
+    console.log('\n🎯 Route: BOM_TO_COSTING');
+    console.log(`📥 Fetching style BOM data for StyleId: ${moduleId}`);
+
+    // 1. Get style BOM data from PLM
+    const styleData = await plmService.getAndParseStyleBom(moduleId);
+    
+    if (!styleData) {
+      return res.status(200).json({
+        success: false,
+        errorCode: 'STYLE_NOT_FOUND',
+        error: 'Style not found',
+        message: `No style data found for StyleId: ${moduleId}`,
+        styleId: moduleId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log('✅ Style BOM data retrieved from PLM');
+
+    // 2. Process BOM costing calculations
+    console.log('🔢 Processing BOM costing calculations...');
+    const calculatedData = bomCalculationService.processBomToCosting(styleData);
+    
+    console.log('✅ BOM costing calculations completed');
+
+    // 3. PATCH data back to PLM
+    console.log('💾 PATCH data back to PLM...');
+    const patchResults = await plmPatchService.patchCostingData(calculatedData);
+    
+    console.log('✅ PATCH operations completed');
+
+    // Return result - ALWAYS 200
+    return res.status(200).json({
+      success: true,
+      workflow: 'BOM_TO_COSTING',
+      styleId: moduleId,
+      bomLinesCount: styleData.bom?.bomLines?.length || 0,
+      calculatedData: calculatedData,
+      patchResults: patchResults,
+      message: 'BOM costing calculation and PATCH completed successfully',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error in handleBomToCosting:', error);
+    // ALWAYS return 200, with error details
+    return res.status(200).json({
+      success: false,
+      errorCode: 'BOM_TO_COSTING_ERROR',
+      error: error.message,
+      message: 'Error processing BOM_TO_COSTING workflow',
       styleId: moduleId,
       timestamp: new Date().toISOString()
     });

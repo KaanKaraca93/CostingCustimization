@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ProcessWorkflow
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" releaseID="11.1" versionID="2.10.0"
+    xmlns="http://schema.infor.com/InforOAGIS/2">
+    <ApplicationArea>
+        <Sender>
+            <LogicalID>lid://infor.fashionplm.fplm</LogicalID>
+            <ComponentID>FPLM</ComponentID>
+            <TaskID>TaskID0</TaskID>
+            <AuthorizationID>AuthorizationID0</AuthorizationID>
+        </Sender>
+        <CreationDateTime>2025-12-15T08:17:07Z</CreationDateTime>
+        <BODID>4ff8707c-c9bc-428a-96e7-ea9176aabb20?Workflow&amp;amp;verb=Process</BODID>
+    </ApplicationArea>
+    <DataArea>
+        <Process>
+            <TenantID>ATJZAMEWEF5P4SNV_TST</TenantID>
+            <ActionCriteria>
+                <ActionExpression actionCode="Add" />
+            </ActionCriteria>
+        </Process>
+        <Workflow>
+            <Status>
+                <Code>Initial</Code>
+            </Status>
+            <WorkflowDefinitionCode>UPDATED_STYLE_OVERVIEW</WorkflowDefinitionCode>
+            <Property>
+                <NameValue name="ModuleId" type="StringType">158</NameValue>
+            </Property>
+            <Property>
+                <NameValue name="ModuleCode" type="StringType">IS1260002101</NameValue>
+            </Property>
+        </Workflow>
+    </DataArea>
+</ProcessWorkflow>
+

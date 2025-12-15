@@ -12,7 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(bodyParser.text({ type: 'text/xml' }));
+app.use(bodyParser.text({ type: ['text/xml', 'application/xml'] }));
 app.use(bodyParser.json());
 
 // Routes
