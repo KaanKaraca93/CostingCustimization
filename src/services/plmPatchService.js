@@ -78,9 +78,16 @@ class PLMPatchService {
 
     for (const field of extFieldMapping) {
       if (calculatedData[field.id] !== undefined && calculatedData[field.value] !== undefined) {
+        const value = calculatedData[field.value];
+        
+        // Skip if value is 0 (PLM doesn't accept 0 values for extended fields)
+        if (value === 0) {
+          continue;
+        }
+        
         payload.push({
           Id: calculatedData[field.id],
-          NumberValue: calculatedData[field.value]
+          NumberValue: String(value) // Convert to string as PLM expects string
         });
       }
     }
@@ -138,25 +145,41 @@ class PLMPatchService {
       console.log('📤 PATCH StyleExtendedFieldValues...');
 
       const payload = this.buildStyleExtendedFieldValuesPayload(calculatedData);
+      
+      // Skip if no extended fields to patch
+      if (payload.length === 0) {
+        console.log('ℹ️  No extended field values to patch, skipping');
+        return { message: 'No extended field values to patch' };
+      }
+      
       const url = `${this.baseUrl}/STYLEEXTENDEDFIELDVALUES`;
 
       console.log('📋 PATCH URL:', url);
-      console.log('📋 Payload:', JSON.stringify(payload, null, 2));
+      console.log(`📋 Patching ${payload.length} extended fields ONE BY ONE...`);
 
       // Get access token
       const authHeader = await tokenService.getAuthorizationHeader();
 
-      // Body is the payload array directly, no X-Infor-MongoQuery needed
-      const response = await axios.patch(url, payload, {
-        headers: {
-          'Authorization': authHeader,
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        }
-      });
+      // PLM accepts only ONE extended field at a time, so PATCH one by one
+      const results = [];
+      for (const field of payload) {
+        const singlePayload = [field]; // Wrap in array as PLM expects array format
+        
+        console.log(`   → Patching Id=${field.Id}, Value=${field.NumberValue}`);
+        
+        const response = await axios.patch(url, singlePayload, {
+          headers: {
+            'Authorization': authHeader,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        results.push(response.data);
+      }
 
-      console.log('✅ PATCH StyleExtendedFieldValues successful');
-      return response.data;
+      console.log(`✅ PATCH StyleExtendedFieldValues successful (${results.length} fields updated)`);
+      return results;
 
     } catch (error) {
       console.error('❌ Error in patchStyleExtendedFieldValues:', error.message);
