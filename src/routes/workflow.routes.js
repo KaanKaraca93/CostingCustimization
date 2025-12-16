@@ -13,13 +13,13 @@ const plmPatchService = require('../services/plmPatchService');
  */
 router.post('/process', async (req, res) => {
   try {
-    const xmlData = req.body;
+    const requestData = req.body;
     
-    if (!xmlData) {
+    if (!requestData) {
       return res.status(200).json({ 
         success: false,
-        errorCode: 'NO_XML_DATA',
-        error: 'No XML data received',
+        errorCode: 'NO_DATA',
+        error: 'No data received',
         message: 'Request body is empty',
         timestamp: new Date().toISOString()
       });
@@ -27,15 +27,36 @@ router.post('/process', async (req, res) => {
 
     console.log('\n🔄 ====== New Workflow Request ======');
 
-    // Extract workflow data from XML
-    const workflowData = await xmlParser.extractWorkflowData(xmlData);
+    let workflowData;
+    
+    // Check if request is JSON or XML
+    if (typeof requestData === 'object') {
+      // JSON format from ION: { workflowdefination: "UPDATED_...", moduleId: "158" }
+      console.log('📦 Input format: JSON');
+      workflowData = {
+        moduleId: requestData.moduleId,
+        workflowDefinitionCode: requestData.workflowdefination || requestData.workflowDefinitionCode
+      };
+    } else if (typeof requestData === 'string') {
+      // XML format (legacy support)
+      console.log('📦 Input format: XML');
+      workflowData = await xmlParser.extractWorkflowData(requestData);
+    } else {
+      return res.status(200).json({ 
+        success: false,
+        errorCode: 'INVALID_FORMAT',
+        error: 'Invalid request format',
+        message: 'Request must be JSON or XML',
+        timestamp: new Date().toISOString()
+      });
+    }
     
     if (!workflowData.moduleId) {
       return res.status(200).json({ 
         success: false,
         errorCode: 'MODULE_ID_NOT_FOUND',
         error: 'ModuleId not found',
-        message: 'ModuleId property not found in the XML',
+        message: 'ModuleId property not found in the request',
         timestamp: new Date().toISOString()
       });
     }
@@ -45,7 +66,7 @@ router.post('/process', async (req, res) => {
         success: false,
         errorCode: 'WORKFLOW_CODE_NOT_FOUND',
         error: 'WorkflowDefinitionCode not found',
-        message: 'WorkflowDefinitionCode not found in the XML',
+        message: 'WorkflowDefinitionCode not found in the request',
         timestamp: new Date().toISOString()
       });
     }

@@ -83,14 +83,35 @@ paths:
         5. PATCH results back to PLM
         6. Return success response with calculated data
         
-      operationId: processWorkflowXml
+      operationId: processWorkflow
       requestBody:
-        description: ProcessWorkflow XML document from PLM
+        description: Workflow data from ION (JSON format)
         required: true
         content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - workflowdefination
+                - moduleId
+              properties:
+                workflowdefination:
+                  type: string
+                  description: Workflow type code
+                  enum:
+                    - UPDATED_STYLE_OVERVIEW
+                    - UPDATED_STYLE_BOO
+                    - UPDATED_STYLE_BOM
+                moduleId:
+                  type: string
+                  description: Style ID from PLM
+              example:
+                workflowdefination: "UPDATED_STYLE_OVERVIEW"
+                moduleId: "158"
           text/xml:
             schema:
               type: string
+              description: XML format (legacy support)
               example: |
                 <?xml version="1.0" encoding="utf-8"?>
                 <ProcessWorkflow xmlns="http://schema.infor.com/InforOAGIS/2">
