@@ -4,8 +4,8 @@
 
 // Currency ID to exchange rate mapping
 const CURRENCY_RATES = {
-  1: 56,  // Currency 1 → Rate 56
-  3: 48,  // Currency 3 → Rate 48
+  1: 64,  // Currency 1 → Rate 64 (updated 2026-01-16)
+  3: 55,  // Currency 3 → Rate 55 (updated 2026-01-16)
   4: 1    // Currency 4 → Rate 1 (TRY)
 };
 

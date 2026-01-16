@@ -107,28 +107,29 @@ function processBomToCosting(styleData) {
       
       const overrideValues = new Map();
       
-      // 1. Add BOM-calculated values (same for all suppliers)
+      // 1. FIRST: Read ALL existing Type=1 values from THIS supplier (like BOO workflow)
+      console.log(`   📊 Reading existing Type=1 values from cost elements...`);
+      for (const element of type1Elements) {
+        let existingValue = 0;
+        
+        // Get value from THIS supplier
+        if (element.supplierValues && element.supplierValues.length > 0) {
+          const supplierVal = element.supplierValues.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
+          
+          if (supplierVal) {
+            existingValue = parseFloat(supplierVal.Value) || 0;
+          }
+        }
+        
+        overrideValues.set(element.code, existingValue);
+      }
+      console.log(`   ✅ Read ${overrideValues.size} Type=1 values from cost elements`);
+      
+      // 2. THEN: Override with BOM-calculated values (same for all suppliers)
+      console.log(`   🆕 Overriding with ${Object.keys(costElementValues).length} BOM-calculated values...`);
       for (const [code, value] of Object.entries(costElementValues)) {
         overrideValues.set(code, value);
-      }
-      
-      // 2. Add existing Type=1 values from THIS supplier
-      for (const element of type1Elements) {
-        // Only add if not already set by BOM calculations
-        if (!overrideValues.has(element.code)) {
-          let existingValue = 0;
-          
-          // Get value from THIS supplier
-          if (element.supplierValues && element.supplierValues.length > 0) {
-            const supplierVal = element.supplierValues.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
-            
-            if (supplierVal) {
-              existingValue = parseFloat(supplierVal.Value) || 0;
-            }
-          }
-          
-          overrideValues.set(element.code, existingValue);
-        }
+        console.log(`      ${code} = ${value.toFixed(2)} (from BOM)`);
       }
       
       // 3. Calculate Type=3 formulas for THIS supplier using THEIR values
@@ -161,7 +162,8 @@ function processBomToCosting(styleData) {
       console.log(`   ✅ Calculated and patched ${type3Elements.length} Type=3 elements for supplier ${unlockedSupplier.id}`);
     }
 
-    // ===== PROCESS EXTENDED FIELDS =====
+    /* ===== EXTENDED FIELDS PROCESSING - DISABLED (handled by ION) =====
+    // Extended fields are now managed by ION/PLM workflow, not by Heroku
     console.log('\n📝 Processing Extended Fields...');
 
     // Get existing extended field values from styleData
@@ -242,6 +244,7 @@ function processBomToCosting(styleData) {
       
       console.log(`   ✅ ${code}: Id=${extFieldRecord.id}, Value=${value.toFixed(2)}`);
     }
+    ===== END DISABLED ===== */
 
     console.log('\n✅ BOM Costing calculation completed for StyleId:', styleId);
     return result;
