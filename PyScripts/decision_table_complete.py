@@ -44,6 +44,7 @@ if result:
     KumasHedefMaliyet = result['KumasHedefMaliyet']
     MU = result['MU']
     SegmentPSF = result['SegmentPSF']
+    KDV = result['KDV']
 else:
     # Not found - return zeros
     AlimFiyat_TRY = 0
@@ -52,6 +53,7 @@ else:
     KumasHedefMaliyet = 0
     MU = 0
     SegmentPSF = 0
+    KDV = 0
 
 # Debug log
 print(f"Lookup Key: {key}")

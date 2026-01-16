@@ -578,24 +578,13 @@ function processBooToCosting(styleData) {
 
     console.log(`✅ Will write AISC=${finalAISC} to ${unlockedSuppliers.length} unlocked suppliers`);
 
-    // Find decision values from decision table (for other Type=1 elements)
-    const decisionValues = findDecisionValues(brandId, subCategoryId, udf5Id, cluster);
-    
-    if (!decisionValues) {
-      throw new Error(`No matching decision table entry found for BrandId=${brandId}, SubCategoryId=${subCategoryId}, UDF5Id=${udf5Id}, Cluster=${cluster}`);
-    }
+    /* ===== DECISION TABLE LOOKUP - REMOVED (values already in cost elements from OVERVIEW) =====
+    // BOO doesn't need decision table lookup
+    // All Type=1 values (SPSF, MU, GKUR, etc.) were already written by OVERVIEW workflow
+    // We just need to update AISC and recalculate Type=3 formulas
+    ===== END REMOVED ===== */
 
-    console.log(`✅ Decision values found: {
-  BrandId: ${decisionValues.BrandId},
-  SubCategoryId: ${decisionValues.SubCategoryId},
-  UDF5Id: ${decisionValues.UDF5Id},
-  Cluster: '${decisionValues.Cluster}'
-}`);
-
-    // Get GKUR from decision values
-    const gkurValue = (decisionValues && decisionValues.HesaplamaKuru) || 48;
-
-    // Extended Field ID mapping
+    /* ===== EXTENDED FIELD MAPPING - DISABLED (handled by ION) =====
     const extendedFieldMapping = {
       'AlımFiyatı_USD': 'daa197bf-717f-4374-9b0c-5a19b8cb2f3a',
       'SegmentPSF': 'b63395db-8252-4b69-b0bd-6506738081b6',
@@ -605,7 +594,6 @@ function processBooToCosting(styleData) {
       'AlımTarget_USD_105': 'b3eeb0c5-f089-441c-a3ff-bfd5697ba30f'
     };
     
-    // Type=3 Cost Element to Extended Field mapping
     const type3ToExtFieldMapping = {
       'TKMS': '14a52574-591e-4082-83e7-6a401808b726',
       'TAST': 'c645f6f2-d537-4234-87c1-7675677ffb86',
@@ -614,6 +602,7 @@ function processBooToCosting(styleData) {
       'TISL': '40ea5b12-832b-41e9-aefb-e547d1e6884b',
       'TDGR': 'bc11923a-8594-4f22-b2bb-ab7f5f558ba7'
     };
+    ===== END DISABLED ===== */
 
     const result = {
       StyleId: styleId,
@@ -660,46 +649,46 @@ function processBooToCosting(styleData) {
 
     // ===== BUILD OVERRIDE VALUES FOR TYPE=3 CALCULATION =====
     console.log('\n🧮 Preparing values for Type=3 calculation...');
+    console.log('   ℹ️  Reading Type=1 values from existing cost elements (written by OVERVIEW workflow)');
     
     const overrideValues = new Map();
     
-    // Add AISC
+    // Read existing Type=1 cost element values (already written by OVERVIEW)
+    // These include: SPSF, MU, KHDF, ALMTRY, GKUR, KDV, VRG, NAVL, RPSF, FOB, AISC, etc.
+    const type1Elements = styleCostElements.filter(elem => elem.type === 1);
+    
+    for (const element of type1Elements) {
+      // Get value from first unlocked supplier (they all have the same value for Type=1)
+      if (unlockedSuppliers.length > 0 && element.supplierValues && element.supplierValues.length > 0) {
+        const firstSupplierVal = element.supplierValues.find(
+          val => val.StyleCostingSupplierId === unlockedSuppliers[0].id
+        );
+        
+        if (firstSupplierVal && firstSupplierVal.Value !== null && firstSupplierVal.Value !== undefined) {
+          overrideValues.set(element.code, firstSupplierVal.Value);
+          console.log(`   📊 ${element.code} = ${firstSupplierVal.Value} (from cost element)`);
+        }
+      }
+    }
+    
+    // Override AISC with newly calculated value from BOO (Map.set automatically overwrites)
     overrideValues.set('AISC', finalAISC);
+    console.log(`   🆕 AISC = ${finalAISC} (newly calculated from BOO - overriding old value)`);
     
-    // Add decision table values
-    if (decisionValues) {
-      overrideValues.set('SPSF', decisionValues.SegmentPSF || 0);
-      overrideValues.set('MU', decisionValues.MU || 0);
-      overrideValues.set('KHDF', decisionValues.KumaşHedefMaliyet || 0);
-      overrideValues.set('ALMTRY', decisionValues.AlımFiyatı_TRY || 0);
-      overrideValues.set('GKUR', decisionValues.HesaplamaKuru || 0);
-      overrideValues.set('KDV', decisionValues.KDV || 0);
-    }
-    
-    // Add VRG and NAVL (use first supplier)
-    if (unlockedSuppliers.length > 0) {
-      const firstSupplier = unlockedSuppliers[0];
-      const vrgValue = firstSupplier.countryId === 69 ? 1 : 1.38;
-      const navlValue = firstSupplier.countryId === 69 ? 1 : 1.08;
-      overrideValues.set('VRG', vrgValue);
-      overrideValues.set('NAVL', navlValue);
-    }
-    
-    // Add RPSF if available
-    if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
-      overrideValues.set('RPSF', styleInfo.retailPrice);
-    }
-    
-    // Add FOB if available
-    if (styleInfo.numericValue2 !== null && styleInfo.numericValue2 !== undefined) {
-      const fobValue = Math.round((styleInfo.numericValue2 * gkurValue) * 100) / 100;
-      overrideValues.set('FOB', fobValue);
-    }
-    
-    console.log(`   📊 Override values prepared: ${overrideValues.size} values (AISC=${finalAISC})`);
+    console.log(`   ✅ Override values prepared: ${overrideValues.size} values total`);
 
     // ===== CALCULATE TYPE=3 ELEMENTS (Same for all suppliers) =====
     console.log('\n🧮 Calculating Type=3 (Calculated) Elements...');
+    
+    // Debug: Log formulas
+    const tcostElement = styleCostElements.find(e => e.code === 'TCOST');
+    const tiscElement = styleCostElements.find(e => e.code === 'TISC');
+    const mcostElement = styleCostElements.find(e => e.code === 'MCOST');
+    
+    if (tcostElement) console.log(`   🔍 TCOST Formula: ${tcostElement.formula}`);
+    if (tiscElement) console.log(`   🔍 TISC Formula: ${tiscElement.formula}`);
+    if (mcostElement) console.log(`   🔍 MCOST Formula: ${mcostElement.formula}`);
+    
     const calculatedValues = calculateAllFormulas(styleCostElements, overrideValues);
     
     const type3Elements = styleCostElements.filter(elem => elem.type === 3 && elem.formula);
@@ -728,7 +717,8 @@ function processBooToCosting(styleData) {
       console.log(`   ✅ ${element.code} (Type=3): Calculated=${calculatedValue.toFixed(2)}, Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
     }
 
-    // ===== EXTENDED FIELDS =====
+    /* ===== EXTENDED FIELDS PROCESSING - DISABLED (handled by ION) =====
+    // Extended fields are now managed by ION/PLM workflow, not by Heroku
     console.log('\n📝 Processing Extended Fields...');
     
     const styleExtendedFieldValues = styleData.extendedFields || [];
@@ -786,6 +776,7 @@ function processBooToCosting(styleData) {
         console.log(`✅ ${elementCode} → Extended Field: Id=${extField.id}, Value=${roundedValue.toFixed(2)}`);
       }
     }
+    ===== END DISABLED ===== */
 
     console.log('\n✅ BOO Costing calculation completed for StyleId:', styleId);
     return result;

@@ -309,6 +309,9 @@ if __name__ == "__main__":
     print(f"  MU: {result['MU']}")
     print(f"  KumasHedefMaliyet: {result['KumasHedefMaliyet']}")
     print(f"  HesaplamaKuru: {result['HesaplamaKuru']}")
+    print(f"  KDV: {result['KDV']}")
+    print(f"  AlimFiyat_TRY: {result['AlimFiyat_TRY']}")
+    print(f"  AlimFiyat_USD: {result['AlimFiyat_USD']}")
     print()
     
     # Test: Not found case (should return all zeros)
@@ -318,3 +321,6 @@ if __name__ == "__main__":
     print(f"  MU: {result2['MU']}")
     print(f"  KumasHedefMaliyet: {result2['KumasHedefMaliyet']}")
     print(f"  HesaplamaKuru: {result2['HesaplamaKuru']}")
+    print(f"  KDV: {result2['KDV']}")
+    print(f"  AlimFiyat_TRY: {result2['AlimFiyat_TRY']}")
+    print(f"  AlimFiyat_USD: {result2['AlimFiyat_USD']}")
