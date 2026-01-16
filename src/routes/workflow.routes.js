@@ -31,11 +31,12 @@ router.post('/process', async (req, res) => {
     
     // Check if request is JSON or XML
     if (typeof requestData === 'object') {
-      // JSON format from ION: { workflowdefination: "UPDATED_...", moduleId: "158" }
+      // JSON format from ION: { workflowdefination: "UPDATED_...", moduleId: "158", decisionTableValues: {...} }
       console.log('📦 Input format: JSON');
       workflowData = {
         moduleId: requestData.moduleId,
-        workflowDefinitionCode: requestData.workflowdefination || requestData.workflowDefinitionCode
+        workflowDefinitionCode: requestData.workflowdefination || requestData.workflowDefinitionCode,
+        decisionTableValues: requestData.decisionTableValues || null  // New: Decision table values from ION
       };
     } else if (typeof requestData === 'string') {
       // XML format (legacy support)
@@ -77,7 +78,7 @@ router.post('/process', async (req, res) => {
     // Route based on WorkflowDefinitionCode
     switch (workflowData.workflowDefinitionCode) {
       case 'UPDATED_STYLE_OVERVIEW':
-        return await handleOverviewToCosting(workflowData.moduleId, res);
+        return await handleOverviewToCosting(workflowData.moduleId, workflowData.decisionTableValues, res);
       
       case 'UPDATED_STYLE_BOO':
         return await handleBooToCosting(workflowData.moduleId, res);
@@ -111,10 +112,11 @@ router.post('/process', async (req, res) => {
 
 /**
  * Handle UPDATED_STYLE_OVERVIEW workflow
- * @param {string} moduleId - Style ID from XML
+ * @param {string} moduleId - Style ID from input
+ * @param {Object|null} decisionTableValues - Decision table values from ION (nullable)
  * @param {Object} res - Express response object
  */
-async function handleOverviewToCosting(moduleId, res) {
+async function handleOverviewToCosting(moduleId, decisionTableValues, res) {
   try {
     console.log('\n🎯 Route: OVERVIEW_TO_COSTING');
     console.log(`📥 Fetching style data for StyleId: ${moduleId}`);
@@ -140,7 +142,7 @@ async function handleOverviewToCosting(moduleId, res) {
 
     // 2. Process costing calculations
     console.log('🔢 Processing costing calculations...');
-    const calculatedData = costingCalculationService.processStyleToSegmentPSF(styleData);
+    const calculatedData = costingCalculationService.processStyleToSegmentPSF(styleData, decisionTableValues);
     
     console.log('✅ Costing calculations completed');
 

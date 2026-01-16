@@ -192,7 +192,7 @@ class PLMPatchService {
   }
 
   /**
-   * Execute complete PATCH operation (both endpoints)
+   * Execute complete PATCH operation (supplier values only - extended fields handled by ION)
    * @param {Object} calculatedData - Calculated costing data
    * @returns {Promise<Object>} Combined results
    */
@@ -200,15 +200,18 @@ class PLMPatchService {
     try {
       console.log('\n💾 Starting PATCH operations...');
 
-      // PATCH both endpoints sequentially
+      // PATCH supplier values only
       const result1 = await this.patchStyleCostingSupplierValue(calculatedData);
+      
+      /* ===== EXTENDED FIELDS PATCH - DISABLED (handled by ION) =====
       const result2 = await this.patchStyleExtendedFieldValues(calculatedData);
+      ===== END DISABLED ===== */
 
       console.log('✅ All PATCH operations completed successfully\n');
 
       return {
-        styleCostingSupplierValue: result1,
-        styleExtendedFieldValues: result2
+        styleCostingSupplierValue: result1
+        // styleExtendedFieldValues: result2  // Disabled - handled by ION
       };
 
     } catch (error) {

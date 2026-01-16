@@ -1,4 +1,5 @@
-const { findDecisionValues } = require('../config/decisionTable');
+const { findDecisionValues } = require('../config/decisionTable');  // Legacy - not used in new flow
+const { findVrgNavl } = require('../config/vrgNavlMapping');  // NEW: VRG/NAVL mapping
 const { calculateAllFormulas } = require('../utils/formulaEvaluator');
 
 /**
@@ -10,9 +11,10 @@ const { calculateAllFormulas } = require('../utils/formulaEvaluator');
 /**
  * Process Style data to calculate Segment PSF and other cost elements
  * @param {Object} styleData - Style data from PLM (transformed to camelCase)
+ * @param {Object|null} decisionTableValues - Decision table values from ION input (optional)
  * @returns {Object} Calculated data ready for PATCH
  */
-function processStyleToSegmentPSF(styleData) {
+function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
   try {
     console.log('🔄 Starting costing calculations...');
 
@@ -31,18 +33,16 @@ function processStyleToSegmentPSF(styleData) {
 
     console.log(`📋 Style Info: ID=${styleId}, Code=${styleCode}, Brand=${brandId}, SubCategory=${subCategoryId}, UDF5=${udf5Id}`);
 
-    // Extract Cluster from first colorway's FreeFieldOne
+    // Extract Cluster from first colorway's FreeFieldOne (optional - not used in new flow)
     const styleColorways = styleData.colorways || [];
-    if (!styleColorways || styleColorways.length === 0) {
-      throw new Error('No StyleColorways found');
+    let cluster = null;
+    
+    if (styleColorways && styleColorways.length > 0 && styleColorways[0].freeFieldOne) {
+      cluster = styleColorways[0].freeFieldOne;
+      console.log(`🎯 Cluster: ${cluster}`);
+    } else {
+      console.log(`ℹ️  Cluster not found (optional - decision values come from input)`);
     }
-
-    const cluster = styleColorways[0].freeFieldOne;
-    if (!cluster) {
-      throw new Error('Cluster (FreeFieldOne) not found in first StyleColorway');
-    }
-
-    console.log(`🎯 Cluster: ${cluster}`);
 
     // Get StyleCosting
     const styleCosting = styleData.costing;
@@ -73,13 +73,23 @@ function processStyleToSegmentPSF(styleData) {
 
     console.log(`✅ Will write data for ${unlockedSuppliers.length} unlocked suppliers`);
 
-    // Find decision values from decision table
-    const decisionValues = findDecisionValues(brandId, subCategoryId, udf5Id, cluster);
+    // ===== DECISION TABLE VALUES (FROM INPUT) =====
+    // NEW: Get decision values from input instead of lookup
+    let decisionValues = decisionTableValues;
     
     if (!decisionValues) {
-      console.warn(`⚠️  No decision values found for BrandId=${brandId}, SubCategoryId=${subCategoryId}, UDF5Id=${udf5Id}, Cluster=${cluster}`);
+      console.warn(`⚠️  No decision table values provided in input, using zeros`);
+      decisionValues = {
+        SegmentPSF: 0,
+        MU: 0,
+        KumaşHedefMaliyet: 0,
+        AlımFiyatı_TRY: 0,
+        AlımFiyatı_USD: 0,
+        HesaplamaKuru: 0,
+        KDV: 0
+      };
     } else {
-      console.log(`✅ Decision values found:`, decisionValues);
+      console.log(`✅ Decision values received from ION input:`, decisionValues);
     }
 
     // Code mapping: Decision Table Key -> Cost Element Code
@@ -93,6 +103,7 @@ function processStyleToSegmentPSF(styleData) {
       'KDV': { code: 'KDV', outputKey: 'KDV' }
     };
 
+    /* ===== EXTENDED FIELD MAPPING - DISABLED (handled by ION) =====
     // Extended Field ID mapping
     const extendedFieldMapping = {
       'AlımFiyatı_USD': 'daa197bf-717f-4374-9b0c-5a19b8cb2f3a',
@@ -112,6 +123,7 @@ function processStyleToSegmentPSF(styleData) {
       'TISL': '40ea5b12-832b-41e9-aefb-e547d1e6884b',
       'TDGR': 'bc11923a-8594-4f22-b2bb-ab7f5f558ba7'
     };
+    ===== END DISABLED ===== */
 
     const result = {
       StyleId: styleId,
@@ -179,6 +191,7 @@ function processStyleToSegmentPSF(styleData) {
       console.log(`✅ ${mapping.code}: Type=${element.type}, Value=${decisionValue}, Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
     }
 
+    /* ===== EXTENDED FIELDS PROCESSING - DISABLED (handled by ION) =====
     // Process Extended Fields
     const styleExtendedFieldValues = styleData.extendedFields || [];
 
@@ -209,11 +222,12 @@ function processStyleToSegmentPSF(styleData) {
 
       console.log(`✅ Extended Field ${decisionKey}: Id=${extField.id}, Value=${decisionValue}`);
     }
+    ===== END DISABLED ===== */
 
-    // ===== PROCESS VRG AND NAVL (CountryId-based) =====
-    console.log('\n🌍 Processing VRG and NAVL based on CountryId...');
+    // ===== PROCESS VRG AND NAVL (NEW: CountryId + BrandId based) =====
+    console.log('\n🌍 Processing VRG and NAVL based on CountryId + BrandId...');
     
-    // Process VRG and NAVL - values depend on CountryId of each supplier
+    // Process VRG and NAVL - values depend on CountryId AND BrandId
     const countryBasedElements = ['VRG', 'NAVL'];
     
     for (const elementCode of countryBasedElements) {
@@ -233,14 +247,9 @@ function processStyleToSegmentPSF(styleData) {
         const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
         
         if (targetVal) {
-          // Determine value based on CountryId
-          let value;
-          if (unlockedSupplier.countryId === 69) {
-            value = 1;
-          } else {
-            // CountryId is not 69 (or null, 0, other)
-            value = elementCode === 'VRG' ? 1.38 : 1.08;
-          }
+          // NEW: Use mapping table with CountryId + BrandId
+          const vrgNavlValues = findVrgNavl(unlockedSupplier.countryId, brandId);
+          const value = elementCode === 'VRG' ? vrgNavlValues.VRG : vrgNavlValues.NAVL;
           
           result.supplierValues.push({
             Id: targetVal.Id,
@@ -250,7 +259,7 @@ function processStyleToSegmentPSF(styleData) {
           });
           foundCount++;
           
-          console.log(`   Supplier ${unlockedSupplier.id} (CountryId=${unlockedSupplier.countryId}): ${elementCode}=${value}`);
+          console.log(`   Supplier ${unlockedSupplier.id} (CountryId=${unlockedSupplier.countryId}, BrandId=${brandId}): ${elementCode}=${value}`);
         }
       }
       
@@ -286,8 +295,9 @@ function processStyleToSegmentPSF(styleData) {
       console.log(`ℹ️  RPSF element not found or RetailPrice is null (skipping)`);
     }
 
-    // ===== GET GKUR VALUE (used by FOB and Extended Fields) =====
-    const gkurValue = (decisionValues && decisionValues.HesaplamaKuru) || 48; // Default GKUR=48
+    // ===== GET GKUR VALUE (used by FOB) =====
+    // NEW: GKUR comes from input (decisionTableValues)
+    const gkurValue = (decisionValues && decisionValues.HesaplamaKuru) || 0;
 
     // ===== PROCESS FOB (NumericValue2 × GKUR) =====
     console.log('\n📦 Processing FOB (MerchHedef × GKUR)...');
@@ -336,14 +346,13 @@ function processStyleToSegmentPSF(styleData) {
       overrideValues.set('KDV', decisionValues.KDV || 0);
     }
     
-    // Add VRG and NAVL (these depend on CountryId, use first supplier's value)
-    // For formula calculation, we'll use a representative value
+    // Add VRG and NAVL (NEW: use mapping with CountryId + BrandId)
+    // For formula calculation, we'll use first supplier's values as representative
     if (unlockedSuppliers.length > 0) {
       const firstSupplier = unlockedSuppliers[0];
-      const vrgValue = firstSupplier.countryId === 69 ? 1 : 1.38;
-      const navlValue = firstSupplier.countryId === 69 ? 1 : 1.08;
-      overrideValues.set('VRG', vrgValue);
-      overrideValues.set('NAVL', navlValue);
+      const vrgNavlValues = findVrgNavl(firstSupplier.countryId, brandId);
+      overrideValues.set('VRG', vrgNavlValues.VRG);
+      overrideValues.set('NAVL', vrgNavlValues.NAVL);
     }
     
     // Add RPSF if available
@@ -396,6 +405,7 @@ function processStyleToSegmentPSF(styleData) {
       console.log(`   ✅ ${element.code} (Type=3): Calculated=${calculatedValue.toFixed(2)}, Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
     }
 
+    /* ===== EXTENDED FIELDS CALCULATION - DISABLED (handled by ION) =====
     // ===== CALCULATE NEW EXTENDED FIELDS =====
     console.log('\n📝 Calculating Additional Extended Fields...');
     
@@ -457,6 +467,7 @@ function processStyleToSegmentPSF(styleData) {
         console.log(`ℹ️  Extended Field for ${elementCode} not found (skipping)`);
       }
     }
+    ===== END DISABLED ===== */
 
     console.log('\n✅ Costing calculation completed for StyleId:', styleId);
     return result;
@@ -492,18 +503,16 @@ function processBooToCosting(styleData) {
 
     console.log(`📋 Style Info: ID=${styleId}, Code=${styleCode}, Brand=${brandId}, SubCategory=${subCategoryId}, UDF5=${udf5Id}`);
 
-    // Extract Cluster from first colorway's FreeFieldOne
+    // Extract Cluster from first colorway's FreeFieldOne (optional - not used in workflows)
     const styleColorways = styleData.colorways || [];
-    if (!styleColorways || styleColorways.length === 0) {
-      throw new Error('No StyleColorways found');
+    let cluster = null;
+    
+    if (styleColorways && styleColorways.length > 0 && styleColorways[0].freeFieldOne) {
+      cluster = styleColorways[0].freeFieldOne;
+      console.log(`🎯 Cluster: ${cluster}`);
+    } else {
+      console.log(`ℹ️  Cluster not found (optional)`);
     }
-
-    const cluster = styleColorways[0].freeFieldOne;
-    if (!cluster) {
-      throw new Error('Cluster (FreeFieldOne) not found in first StyleColorway');
-    }
-
-    console.log(`🎯 Cluster: ${cluster}`);
 
     // Calculate BOO operation costs with logic
     let code1Cost = 0;
