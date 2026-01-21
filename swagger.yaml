@@ -283,6 +283,7 @@ paths:
                   TTRM: 0.000000
                   TISL: 0.000000
                   TDGR: 0.000000
+                  TCOST: 0.000000
                 timestamp: "2025-01-21T12:00:00.000Z"
         '400':
           description: Bad Request - Missing filter
@@ -532,6 +533,11 @@ components:
               type: number
               nullable: true
               description: TDGR cost element value
+              example: 0.000000
+            TCOST:
+              type: number
+              nullable: true
+              description: TCOST (Total Cost) cost element value
               example: 0.000000
         timestamp:
           type: string

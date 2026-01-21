@@ -393,7 +393,7 @@ router.post('/get-cost-element-values', async (req, res) => {
     console.log(`📋 Filter: ${filter}`);
 
     // Construct OData query
-    const odataQuery = `$select=StyleId,StyleCode&$expand=STYLECOSTING($expand=STYLECOSTELEMENTS($select=Id,StyleCostingId,Code;$expand=STYLECOSTINGSUPPLIERVALS;$filter=Code eq 'RHDF' or Code eq 'GKUR' or Code eq 'TKMS' or Code eq 'TAST' or Code eq 'TISC' or Code eq 'TTRM' or Code eq 'TISL' or Code eq 'TDGR'),STYLECOSTSUPPLIERS($select=Id,StyleCostingId,StyleSupplierId,IsActive,IsLock,IsMainVersion);$select=Id,CostModelId,CurrencyId)&$filter=${filter}`;
+    const odataQuery = `$select=StyleId,StyleCode&$expand=STYLECOSTING($expand=STYLECOSTELEMENTS($select=Id,StyleCostingId,Code;$expand=STYLECOSTINGSUPPLIERVALS;$filter=Code eq 'RHDF' or Code eq 'GKUR' or Code eq 'TKMS' or Code eq 'TAST' or Code eq 'TISC' or Code eq 'TTRM' or Code eq 'TISL' or Code eq 'TDGR' or Code eq 'TCOST'),STYLECOSTSUPPLIERS($select=Id,StyleCostingId,StyleSupplierId,IsActive,IsLock,IsMainVersion);$select=Id,CostModelId,CurrencyId)&$filter=${filter}`;
 
     console.log('🌐 Fetching data from PLM...');
     
@@ -459,7 +459,7 @@ router.post('/get-cost-element-values', async (req, res) => {
 
     // Extract values for each cost element
     const result = {};
-    const targetCodes = ['RHDF', 'GKUR', 'TKMS', 'TAST', 'TISC', 'TTRM', 'TISL', 'TDGR'];
+    const targetCodes = ['RHDF', 'GKUR', 'TKMS', 'TAST', 'TISC', 'TTRM', 'TISL', 'TDGR', 'TCOST'];
 
     for (const code of targetCodes) {
       const element = costElements.find(e => e.Code === code);
