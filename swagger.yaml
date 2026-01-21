@@ -284,6 +284,19 @@ paths:
                   TISL: 0.000000
                   TDGR: 0.000000
                   TCOST: 0.000000
+                extendedFieldIds:
+                  AlimFiyati_USD: 196065
+                  SegmentPSF: 196066
+                  KumasHedefMaliyet: 196067
+                  AlimFiyat_TRY: 196068
+                  AlimTarget_USD: 196069
+                  AlimTarget_USD_105: 196070
+                  TKMS: 196071
+                  TAST: 196072
+                  TISC: 196073
+                  TTRM: 196074
+                  TISL: 196075
+                  TDGR: 196076
                 timestamp: "2025-01-21T12:00:00.000Z"
         '400':
           description: Bad Request - Missing filter
@@ -539,6 +552,17 @@ components:
               nullable: true
               description: TCOST (Total Cost) cost element value
               example: 0.000000
+        extendedFieldIds:
+          type: object
+          description: Extended field IDs mapped by field name (for PATCH operations)
+          additionalProperties:
+            type: integer
+          example:
+            AlimFiyati_USD: 196065
+            SegmentPSF: 196066
+            KumasHedefMaliyet: 196067
+            TKMS: 196071
+            TAST: 196072
         timestamp:
           type: string
           format: date-time
@@ -550,6 +574,7 @@ components:
         - styleCode
         - selectedSupplierId
         - values
+        - extendedFieldIds
         - timestamp
 
   securitySchemes:

@@ -392,8 +392,10 @@ router.post('/get-cost-element-values', async (req, res) => {
     console.log('\n🔍 ====== Get Cost Element Values Request ======');
     console.log(`📋 Filter: ${filter}`);
 
-    // Construct OData query
-    const odataQuery = `$select=StyleId,StyleCode&$expand=STYLECOSTING($expand=STYLECOSTELEMENTS($select=Id,StyleCostingId,Code;$expand=STYLECOSTINGSUPPLIERVALS;$filter=Code eq 'RHDF' or Code eq 'GKUR' or Code eq 'TKMS' or Code eq 'TAST' or Code eq 'TISC' or Code eq 'TTRM' or Code eq 'TISL' or Code eq 'TDGR' or Code eq 'TCOST'),STYLECOSTSUPPLIERS($select=Id,StyleCostingId,StyleSupplierId,IsActive,IsLock,IsMainVersion);$select=Id,CostModelId,CurrencyId)&$filter=${filter}`;
+    // Construct OData query with StyleExtendedFieldValues
+    const costingExpand = 'STYLECOSTING($expand=STYLECOSTELEMENTS($select=Id,StyleCostingId,Code;$expand=STYLECOSTINGSUPPLIERVALS;$filter=Code eq \'RHDF\' or Code eq \'GKUR\' or Code eq \'TKMS\' or Code eq \'TAST\' or Code eq \'TISC\' or Code eq \'TTRM\' or Code eq \'TISL\' or Code eq \'TDGR\' or Code eq \'TCOST\'),STYLECOSTSUPPLIERS($select=Id,StyleCostingId,StyleSupplierId,IsActive,IsLock,IsMainVersion);$select=Id,CostModelId,CurrencyId)';
+    const extendedFieldsExpand = 'STYLEEXTENDEDFIELDVALUES($select=StyleId,Id,ExtFldId,NumberValue;$expand=STYLEEXTENDEDFIELDS($select=Name))';
+    const odataQuery = `$select=StyleId,StyleCode&$expand=${costingExpand},${extendedFieldsExpand}&$filter=${filter}`;
 
     console.log('🌐 Fetching data from PLM...');
     
@@ -485,12 +487,30 @@ router.post('/get-cost-element-values', async (req, res) => {
 
     console.log('✅ Cost element values extracted successfully');
 
+    // Extract Extended Field Values
+    console.log('\n📋 Extracting Extended Field Values...');
+    const extendedFields = styleData.StyleExtendedFieldValues || [];
+    console.log(`📊 Total Extended Fields: ${extendedFields.length}`);
+
+    // Build extended fields object with fieldName as key and id as value
+    const extendedFieldsData = {};
+    for (const field of extendedFields) {
+      const fieldName = field.StyleExtendedFields?.Name;
+      if (fieldName) {
+        extendedFieldsData[fieldName] = field.Id;
+        console.log(`✅ ${fieldName}: Id=${field.Id}`);
+      }
+    }
+
+    console.log(`✅ Extracted ${Object.keys(extendedFieldsData).length} extended fields`);
+
     return res.status(200).json({
       success: true,
       styleId: styleData.StyleId,
       styleCode: styleData.StyleCode,
       selectedSupplierId: selectedSupplier.Id,
       values: result,
+      extendedFieldIds: extendedFieldsData,
       timestamp: new Date().toISOString()
     });
 
