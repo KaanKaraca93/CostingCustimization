@@ -284,6 +284,7 @@ paths:
                   TISL: 0.000000
                   TDGR: 0.000000
                   TCOST: 0.000000
+                  RMU: 0.000000
                 extendedFieldIds:
                   AlimFiyati_USD: 196065
                   SegmentPSF: 196066
@@ -551,6 +552,11 @@ components:
               type: number
               nullable: true
               description: TCOST (Total Cost) cost element value
+              example: 0.000000
+            RMU:
+              type: number
+              nullable: true
+              description: RMU cost element value
               example: 0.000000
         extendedFieldIds:
           type: object
