@@ -225,6 +225,124 @@ paths:
                 error: "Internal server error"
                 message: "XML parsing failed: Unexpected token"
 
+  /api/workflow/get-cost-element-values:
+    post:
+      tags:
+        - Costing
+      summary: Get Cost Element Values from PLM
+      description: |
+        **Retrieves specific cost element values from PLM for the main supplier.**
+        
+        This endpoint fetches cost element values (RHDF, GKUR, TKMS, TAST, TISC, TTRM, TISL, TDGR)
+        for a specific style. It automatically selects the main supplier based on:
+        - IsMainVersion = true
+        - IsActive = true
+        - Highest Id among matching suppliers
+        
+        **Process Flow:**
+        1. Fetch style costing data from PLM using provided filter
+        2. Find main supplier (IsMainVersion=true, IsActive=true, highest Id)
+        3. Extract cost element values for selected supplier
+        4. Return values as JSON object
+        
+      operationId: getCostElementValues
+      requestBody:
+        description: Filter to identify the style
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - filter
+              properties:
+                filter:
+                  type: string
+                  description: OData filter expression (e.g., "StyleId eq 10596")
+                  example: "StyleId eq 10596"
+            example:
+              filter: "StyleId eq 10596"
+      responses:
+        '200':
+          description: Successfully retrieved cost element values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostElementValuesResponse'
+              example:
+                success: true
+                styleId: 10596
+                styleCode: "IS1230034100"
+                selectedSupplierId: 178
+                values:
+                  RHDF: 0.000000
+                  GKUR: 0.000000
+                  TKMS: 0.000000
+                  TAST: 0.000000
+                  TISC: 0.000000
+                  TTRM: 0.000000
+                  TISL: 0.000000
+                  TDGR: 0.000000
+                timestamp: "2025-01-21T12:00:00.000Z"
+        '400':
+          description: Bad Request - Missing filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                errorCode: "MISSING_FILTER"
+                error: "Filter is required"
+                message: "Please provide a filter parameter (e.g., 'StyleId eq 10596')"
+                timestamp: "2025-01-21T12:00:00.000Z"
+        '404':
+          description: Style or costing data not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                styleNotFound:
+                  summary: Style not found
+                  value:
+                    success: false
+                    errorCode: "STYLE_NOT_FOUND"
+                    error: "Style not found"
+                    message: "No style found matching the provided filter"
+                    filter: "StyleId eq 99999"
+                    timestamp: "2025-01-21T12:00:00.000Z"
+                noCostingData:
+                  summary: No costing data
+                  value:
+                    success: false
+                    errorCode: "NO_COSTING_DATA"
+                    error: "No costing data found for this style"
+                    message: "Style exists but has no costing data"
+                    styleId: 10596
+                    timestamp: "2025-01-21T12:00:00.000Z"
+                noMainSupplier:
+                  summary: No main supplier found
+                  value:
+                    success: false
+                    errorCode: "NO_MAIN_SUPPLIER"
+                    error: "No main active supplier found"
+                    message: "No supplier with IsMainVersion=true and IsActive=true"
+                    styleId: 10596
+                    timestamp: "2025-01-21T12:00:00.000Z"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                errorCode: "INTERNAL_ERROR"
+                error: "Database connection failed"
+                message: "Error retrieving cost element values"
+                timestamp: "2025-01-21T12:00:00.000Z"
+
 components:
   schemas:
     HealthResponse:
@@ -351,6 +469,82 @@ components:
       required:
         - error
         - message
+
+    CostElementValuesResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indicates successful retrieval
+          example: true
+        styleId:
+          type: integer
+          description: Style ID from PLM
+          example: 10596
+        styleCode:
+          type: string
+          description: Style code from PLM
+          example: "IS1230034100"
+        selectedSupplierId:
+          type: integer
+          description: ID of the selected main supplier
+          example: 178
+        values:
+          type: object
+          description: Cost element values for the selected supplier
+          properties:
+            RHDF:
+              type: number
+              nullable: true
+              description: RHDF cost element value
+              example: 0.000000
+            GKUR:
+              type: number
+              nullable: true
+              description: GKUR (Exchange rate) cost element value
+              example: 0.000000
+            TKMS:
+              type: number
+              nullable: true
+              description: TKMS cost element value
+              example: 0.000000
+            TAST:
+              type: number
+              nullable: true
+              description: TAST cost element value
+              example: 0.000000
+            TISC:
+              type: number
+              nullable: true
+              description: TISC cost element value
+              example: 0.000000
+            TTRM:
+              type: number
+              nullable: true
+              description: TTRM cost element value
+              example: 0.000000
+            TISL:
+              type: number
+              nullable: true
+              description: TISL cost element value
+              example: 0.000000
+            TDGR:
+              type: number
+              nullable: true
+              description: TDGR cost element value
+              example: 0.000000
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp
+          example: "2025-01-21T12:00:00.000Z"
+      required:
+        - success
+        - styleId
+        - styleCode
+        - selectedSupplierId
+        - values
+        - timestamp
 
   securitySchemes:
     bearerAuth:

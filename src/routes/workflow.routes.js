@@ -369,5 +369,142 @@ async function handleBomToCosting(moduleId, res) {
   }
 }
 
+/**
+ * Get cost element values endpoint
+ * Retrieves specific cost element values from PLM for the main supplier
+ * POST /api/workflow/get-cost-element-values
+ * Body: { filter: "StyleId eq 10596" }
+ */
+router.post('/get-cost-element-values', async (req, res) => {
+  try {
+    const { filter } = req.body;
+    
+    if (!filter) {
+      return res.status(400).json({ 
+        success: false,
+        errorCode: 'MISSING_FILTER',
+        error: 'Filter is required',
+        message: 'Please provide a filter parameter (e.g., "StyleId eq 10596")',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log('\n🔍 ====== Get Cost Element Values Request ======');
+    console.log(`📋 Filter: ${filter}`);
+
+    // Construct OData query
+    const odataQuery = `$select=StyleId,StyleCode&$expand=STYLECOSTING($expand=STYLECOSTELEMENTS($select=Id,StyleCostingId,Code;$expand=STYLECOSTINGSUPPLIERVALS;$filter=Code eq 'RHDF' or Code eq 'GKUR' or Code eq 'TKMS' or Code eq 'TAST' or Code eq 'TISC' or Code eq 'TTRM' or Code eq 'TISL' or Code eq 'TDGR'),STYLECOSTSUPPLIERS($select=Id,StyleCostingId,StyleSupplierId,IsActive,IsLock,IsMainVersion);$select=Id,CostModelId,CurrencyId)&$filter=${filter}`;
+
+    console.log('🌐 Fetching data from PLM...');
+    
+    // Fetch data from PLM
+    const response = await plmService.getStyleData(odataQuery);
+
+    if (!response || !response.value || response.value.length === 0) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'STYLE_NOT_FOUND',
+        error: 'Style not found',
+        message: 'No style found matching the provided filter',
+        filter: filter,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const styleData = response.value[0];
+    console.log(`✅ Style found: ${styleData.StyleCode} (ID: ${styleData.StyleId})`);
+
+    if (!styleData.StyleCosting || styleData.StyleCosting.length === 0) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'NO_COSTING_DATA',
+        error: 'No costing data found for this style',
+        message: 'Style exists but has no costing data',
+        styleId: styleData.StyleId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const costing = styleData.StyleCosting[0];
+    const suppliers = costing.StyleCostSuppliers || [];
+    const costElements = costing.StyleCostElements || [];
+
+    console.log(`📊 Total Suppliers: ${suppliers.length}`);
+    console.log(`📊 Total Cost Elements: ${costElements.length}`);
+
+    // Filter suppliers: IsMainVersion=true AND IsActive=true
+    const mainActiveSuppliers = suppliers.filter(s => 
+      s.IsMainVersion === true && s.IsActive === true
+    );
+
+    console.log(`✅ Main + Active Suppliers: ${mainActiveSuppliers.length}`);
+
+    if (mainActiveSuppliers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'NO_MAIN_SUPPLIER',
+        error: 'No main active supplier found',
+        message: 'No supplier with IsMainVersion=true and IsActive=true',
+        styleId: styleData.StyleId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Find the supplier with the highest Id
+    const selectedSupplier = mainActiveSuppliers.reduce((max, current) => 
+      current.Id > max.Id ? current : max
+    );
+
+    console.log(`🎯 Selected Supplier: Id=${selectedSupplier.Id}, StyleSupplierId=${selectedSupplier.StyleSupplierId}`);
+
+    // Extract values for each cost element
+    const result = {};
+    const targetCodes = ['RHDF', 'GKUR', 'TKMS', 'TAST', 'TISC', 'TTRM', 'TISL', 'TDGR'];
+
+    for (const code of targetCodes) {
+      const element = costElements.find(e => e.Code === code);
+      
+      if (!element) {
+        console.warn(`⚠️  Cost Element '${code}' not found`);
+        result[code] = null;
+        continue;
+      }
+
+      const supplierVal = element.StyleCostingSupplierVals?.find(
+        sv => sv.StyleCostingSupplierId === selectedSupplier.Id
+      );
+
+      if (!supplierVal) {
+        console.warn(`⚠️  No supplier value found for '${code}' and Supplier Id=${selectedSupplier.Id}`);
+        result[code] = null;
+      } else {
+        result[code] = supplierVal.Value;
+        console.log(`✅ ${code}: ${supplierVal.Value}`);
+      }
+    }
+
+    console.log('✅ Cost element values extracted successfully');
+
+    return res.status(200).json({
+      success: true,
+      styleId: styleData.StyleId,
+      styleCode: styleData.StyleCode,
+      selectedSupplierId: selectedSupplier.Id,
+      values: result,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error in get-cost-element-values:', error);
+    return res.status(500).json({
+      success: false,
+      errorCode: 'INTERNAL_ERROR',
+      error: error.message,
+      message: 'Error retrieving cost element values',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = router;
 

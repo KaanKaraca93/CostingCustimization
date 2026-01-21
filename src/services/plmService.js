@@ -16,6 +16,50 @@ class PLMService {
    * @param {string|number} styleId - Style ID (ModuleId from XML)
    * @returns {Promise<Object>} Style costing data
    */
+  /**
+   * Generic method to fetch data from PLM with custom OData query
+   * @param {string} odataQuery - Full OData query string
+   * @returns {Promise<Object>} Raw response data from PLM
+   */
+  async getStyleData(odataQuery) {
+    try {
+      console.log(`📥 Fetching style data with custom query`);
+
+      // Get access token
+      const authHeader = await tokenService.getAuthorizationHeader();
+
+      const url = `${this.baseUrl}/STYLE?${odataQuery}`;
+
+      console.log('🔗 Request URL:', url);
+
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': authHeader,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data) {
+        console.log('✅ Style data retrieved successfully');
+        return response.data;
+      } else {
+        console.log('⚠️  No data found');
+        return null;
+      }
+
+    } catch (error) {
+      console.error('❌ Error fetching style data:', error.message);
+      
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      
+      throw new Error(`Failed to fetch style data: ${error.message}`);
+    }
+  }
+
   async getStyleCosting(styleId) {
     try {
       console.log(`📥 Fetching style costing data for StyleId: ${styleId}`);
