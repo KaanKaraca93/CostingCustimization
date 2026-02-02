@@ -111,14 +111,10 @@ paths:
                     Input values for OVERVIEW workflow (optional, only for UPDATED_STYLE_OVERVIEW)
                     
                     **Target Suppliers:**
-                    - PSF, MU, KDV, GKUR: Written to ALL unlocked suppliers
-                    - FOB, KHDF: Written ONLY to SupplierId=2
-                    - VRG, NAVL: Written to SupplierId=2 from input, others from CountryId+BrandId mapping
+                    - MU, KDV, GKUR: Written to ALL unlocked suppliers
+                    - FOB, KHDF: Written ONLY to Supplier Code="2" (Hedef Maliyet)
+                    - VRG, NAVL: Written to Code="2" from input, others from CountryId+BrandId mapping
                   properties:
-                    PSF:
-                      type: number
-                      description: Segment PSF (written to all unlocked suppliers)
-                      example: 6999
                     MU:
                       type: number
                       description: Mark Up (written to all unlocked suppliers)
@@ -149,16 +145,15 @@ paths:
                       example: 1.1
               example:
                 workflowdefination: "UPDATED_STYLE_OVERVIEW"
-                moduleId: "158"
+                moduleId: "11457"
                 decisionTableValues:
-                  PSF: 6999
-                  MU: 4.31
+                  MU: 5.3
                   KDV: 0.1
                   GKUR: 55
-                  FOB: 12.5
-                  KHDF: 5.48
-                  VRG: 1.38
-                  NAVL: 1.1
+                  FOB: 16.36
+                  KHDF: 3.5
+                  VRG: 1
+                  NAVL: 1
           text/xml:
             schema:
               type: string

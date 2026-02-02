@@ -7,18 +7,19 @@ const axios = require('axios');
 
 const API_URL = 'http://localhost:3000/api/workflow/process';
 
-// Test payload with decision table values
+// Test payload with NEW decision table values structure
 const testPayload = {
   workflowdefination: "UPDATED_STYLE_OVERVIEW",
-  moduleId: "10596",
+  moduleId: "11457", // Test StyleId
   decisionTableValues: {
-    SegmentPSF: 2349,
-    MU: 1.4,
-    KumaşHedefMaliyet: 120.5,
-    AlımFiyatı_TRY: 1150,
-    AlımFiyatı_USD: 95.5,
-    HesaplamaKuru: 48,
-    KDV: 0.10
+    PSF: 5499,      // Segment PSF (all unlocked suppliers)
+    MU: 5.3,        // Mark Up (all unlocked suppliers)
+    KDV: 0.1,       // Tax rate (all unlocked suppliers)
+    GKUR: 55,       // Exchange rate (all unlocked suppliers)
+    FOB: 16.36,     // FOB value (only SupplierId=2)
+    KHDF: 3.5,      // Target fabric cost (only SupplierId=2)
+    VRG: 1,         // VRG for SupplierId=2 (others use mapping)
+    NAVL: 1         // NAVL for SupplierId=2 (others use mapping)
   }
 };
 

@@ -138,8 +138,8 @@ class PLMService {
     const select = '$select=StyleId,StyleCode,BrandId,SubCategoryId,UserDefinedField5Id,RetailPrice,NumericValue2';
     const filter = `$filter=StyleId eq ${styleId}`;
 
-    // Combine all parts
-    return `?&$expand=${expandQuery},${colorwaysExpand},${extendedFieldsExpand}&${select}&${filter}`;
+    // Combine all parts - MARKETFIELD3 added to expand
+    return `?&$expand=${expandQuery},${colorwaysExpand},${extendedFieldsExpand},MARKETFIELD3($select=Name)&${select}&${filter}`;
   }
 
   /**
@@ -176,6 +176,13 @@ class PLMService {
         name: cw.Name,
         freeFieldOne: cw.FreeFieldOne
       }));
+    }
+
+    // Parse Market Field 3 (for PSF)
+    if (styleData.MarketField3 && styleData.MarketField3.Name) {
+      // Try to parse PSF as number, fallback to null if not a valid number
+      const psfValue = parseFloat(styleData.MarketField3.Name);
+      parsed.styleInfo.psf = isNaN(psfValue) ? null : psfValue;
     }
 
     // Parse Costing (StyleCosting is an array in OData response)

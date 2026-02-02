@@ -94,14 +94,14 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
 
     // Code mapping: Input Key -> Cost Element Code + Target Suppliers
     // "allUnlocked": Write to all unlocked suppliers
-    // "supplierId2": Write only to SupplierId=2
+    // "supplierCode2": Write only to Supplier with Code="2" (Hedef Maliyet)
     const codeMapping = {
-      'PSF': { code: 'SPSF', target: 'allUnlocked' },
+      // PSF/SPSF removed - no longer used in PLM
       'MU': { code: 'MU', target: 'allUnlocked' },
       'KDV': { code: 'KDV', target: 'allUnlocked' },
       'GKUR': { code: 'GKUR', target: 'allUnlocked' },
-      'FOB': { code: 'FOB', target: 'supplierId2' },
-      'KHDF': { code: 'KHDF', target: 'supplierId2' }
+      'FOB': { code: 'FOB', target: 'supplierCode2' },
+      'KHDF': { code: 'KHDF', target: 'supplierCode2' }
     };
 
     /* ===== EXTENDED FIELD MAPPING - DISABLED (handled by ION) =====
@@ -179,11 +179,11 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
       if (mapping.target === 'allUnlocked') {
         // Write to ALL unlocked suppliers
         targetSuppliers = unlockedSuppliers;
-      } else if (mapping.target === 'supplierId2') {
-        // Write ONLY to SupplierId=2
-        targetSuppliers = unlockedSuppliers.filter(s => s.id === 2);
+      } else if (mapping.target === 'supplierCode2') {
+        // Write ONLY to Supplier with Code="2" (Hedef Maliyet)
+        targetSuppliers = unlockedSuppliers.filter(s => s.supplierInfo?.code === '2');
         if (targetSuppliers.length === 0) {
-          console.log(`   ⚠️  SupplierId=2 not found in unlocked suppliers (skipping ${mapping.code})`);
+          console.log(`   ⚠️  Supplier with Code="2" not found in unlocked suppliers (skipping ${mapping.code})`);
           continue;
         }
       }
@@ -266,21 +266,21 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
         if (targetVal) {
           let value = 0;
           
-          // HYBRID LOGIC: SupplierId=2 uses input, others use mapping
-          if (unlockedSupplier.id === 2) {
-            // Use input value for SupplierId=2
+          // HYBRID LOGIC: Supplier Code="2" uses input, others use mapping
+          if (unlockedSupplier.supplierInfo?.code === '2') {
+            // Use input value for Supplier Code="2" (Hedef Maliyet)
             if (decisionValues && decisionValues[elementCode] !== undefined) {
               value = decisionValues[elementCode];
-              console.log(`   ✅ Supplier 2 (Main): ${elementCode}=${value} (from input)`);
+              console.log(`   ✅ Supplier Code="2" (Hedef Maliyet, Id=${unlockedSupplier.id}): ${elementCode}=${value} (from input)`);
             } else {
-              console.warn(`   ⚠️  No input value for ${elementCode} for SupplierId=2, using 0`);
+              console.warn(`   ⚠️  No input value for ${elementCode} for Supplier Code="2", using 0`);
               value = 0;
             }
           } else {
             // Use mapping table with CountryId + BrandId for other suppliers
             const vrgNavlValues = findVrgNavl(unlockedSupplier.countryId, brandId);
             value = elementCode === 'VRG' ? vrgNavlValues.VRG : vrgNavlValues.NAVL;
-            console.log(`   📍 Supplier ${unlockedSupplier.id} (CountryId=${unlockedSupplier.countryId}): ${elementCode}=${value} (from mapping)`);
+            console.log(`   📍 Supplier ${unlockedSupplier.id} (Code="${unlockedSupplier.supplierInfo?.code}", CountryId=${unlockedSupplier.countryId}): ${elementCode}=${value} (from mapping)`);
           }
           
           // Round to 2 decimal places
@@ -299,12 +299,27 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
       console.log(`✅ ${elementCode}: Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
     }
 
-    // ===== PROCESS RPSF (RetailPrice based) =====
-    console.log('\n💰 Processing RPSF (RetailPrice)...');
+    // ===== PROCESS RPSF (PSF from input or MarketField3) =====
+    console.log('\n💰 Processing RPSF (PSF)...');
+    
+    // Priority: 1) Input PSF, 2) PLM MarketField3.Name (psf), 3) RetailPrice (fallback)
+    let rpsfValue = null;
+    let rpsfSource = '';
+    
+    if (decisionValues && decisionValues.PSF !== undefined && decisionValues.PSF !== null) {
+      rpsfValue = decisionValues.PSF;
+      rpsfSource = 'input PSF';
+    } else if (styleInfo.psf !== null && styleInfo.psf !== undefined) {
+      rpsfValue = styleInfo.psf;
+      rpsfSource = 'MarketField3.Name';
+    } else if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
+      rpsfValue = styleInfo.retailPrice;
+      rpsfSource = 'RetailPrice (fallback)';
+    }
     
     const rpsfElement = styleCostElements.find(elem => elem.code === 'RPSF');
-    if (rpsfElement && styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
-      console.log(`📌 Found RPSF element, RetailPrice=${styleInfo.retailPrice}`);
+    if (rpsfElement && rpsfValue !== null) {
+      console.log(`📌 Found RPSF element, PSF=${rpsfValue} (from ${rpsfSource})`);
       
       const supplierVals = rpsfElement.supplierValues || [];
       let foundCount = 0;
@@ -315,7 +330,7 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
         if (targetVal) {
           result.supplierValues.push({
             Id: targetVal.Id,
-            Value: Math.round(styleInfo.retailPrice * 100) / 100, // Round to 2 decimals
+            Value: Math.round(rpsfValue * 100) / 100, // Round to 2 decimals
             elementCode: 'RPSF',
             supplierId: unlockedSupplier.id
           });
@@ -323,9 +338,9 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
         }
       }
       
-      console.log(`✅ RPSF: Value=${styleInfo.retailPrice}, Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
+      console.log(`✅ RPSF: Value=${rpsfValue}, Source=${rpsfSource}, Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
     } else {
-      console.log(`ℹ️  RPSF element not found or RetailPrice is null (skipping)`);
+      console.log(`ℹ️  RPSF element not found or PSF is null (skipping)`);
     }
 
     /* ===== FOB CALCULATION REMOVED - NOW COMES FROM INPUT =====
@@ -341,7 +356,7 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
     
     // Add input values (new key names)
     if (decisionValues) {
-      overrideValues.set('SPSF', decisionValues.PSF || 0);
+      // PSF/SPSF removed - no longer used
       overrideValues.set('MU', decisionValues.MU || 0);
       overrideValues.set('KHDF', decisionValues.KHDF || 0);
       overrideValues.set('FOB', decisionValues.FOB || 0);
@@ -351,26 +366,32 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
       overrideValues.set('NAVL', decisionValues.NAVL || 0);
     }
     
-    // For suppliers other than SupplierId=2, VRG/NAVL comes from mapping
-    // But for formula calculation, we'll use SupplierId=2's values (from input) as representative
-    console.log(`   📊 Using input values for Type=3 calculations (SupplierId=2 values as representative)`);
-    console.log(`   📊 SPSF=${overrideValues.get('SPSF')}, MU=${overrideValues.get('MU')}, KHDF=${overrideValues.get('KHDF')}`);
-    console.log(`   📊 FOB=${overrideValues.get('FOB')}, GKUR=${overrideValues.get('GKUR')}, KDV=${overrideValues.get('KDV')}`);
+    // For suppliers other than Code="2", VRG/NAVL comes from mapping
+    // But for formula calculation, we'll use Code="2"'s values (from input) as representative
+    console.log(`   📊 Using input values for Type=3 calculations (Code="2" values as representative)`);
+    console.log(`   📊 MU=${overrideValues.get('MU')}, KHDF=${overrideValues.get('KHDF')}, FOB=${overrideValues.get('FOB')}`);
+    console.log(`   📊 GKUR=${overrideValues.get('GKUR')}, KDV=${overrideValues.get('KDV')}`);
     console.log(`   📊 VRG=${overrideValues.get('VRG')}, NAVL=${overrideValues.get('NAVL')}`);
     
     
-    // Add RPSF if available
-    if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
-      overrideValues.set('RPSF', styleInfo.retailPrice);
-      console.log(`   ℹ️  Added RPSF to formula values: ${styleInfo.retailPrice}`);
+    // Add RPSF (PSF) if available - Priority: Input PSF > MarketField3 > RetailPrice
+    let rpsfForFormula = null;
+    if (decisionValues && decisionValues.PSF !== undefined && decisionValues.PSF !== null) {
+      rpsfForFormula = decisionValues.PSF;
+    } else if (styleInfo.psf !== null && styleInfo.psf !== undefined) {
+      rpsfForFormula = styleInfo.psf;
+    } else if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
+      rpsfForFormula = styleInfo.retailPrice;
     }
     
-    // Add FOB if available
-    if (styleInfo.numericValue2 !== null && styleInfo.numericValue2 !== undefined) {
-      const fobValue = styleInfo.numericValue2 * gkurValue;
-      overrideValues.set('FOB', fobValue);
-      console.log(`   ℹ️  Added FOB to formula values: ${fobValue}`);
+    if (rpsfForFormula !== null) {
+      overrideValues.set('RPSF', rpsfForFormula);
+      console.log(`   ℹ️  Added RPSF to formula values: ${rpsfForFormula}`);
     }
+    
+    /* ===== FOB CALCULATION REMOVED - FOB comes from input now =====
+    // FOB is already added to overrideValues from decisionTableValues above
+    ===== END REMOVED ===== */
     
     console.log(`   📊 Override values prepared: ${overrideValues.size} values`);
     
