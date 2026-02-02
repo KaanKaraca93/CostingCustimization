@@ -105,9 +105,60 @@ paths:
                 moduleId:
                   type: string
                   description: Style ID from PLM
+                decisionTableValues:
+                  type: object
+                  description: |
+                    Input values for OVERVIEW workflow (optional, only for UPDATED_STYLE_OVERVIEW)
+                    
+                    **Target Suppliers:**
+                    - PSF, MU, KDV, GKUR: Written to ALL unlocked suppliers
+                    - FOB, KHDF: Written ONLY to SupplierId=2
+                    - VRG, NAVL: Written to SupplierId=2 from input, others from CountryId+BrandId mapping
+                  properties:
+                    PSF:
+                      type: number
+                      description: Segment PSF (written to all unlocked suppliers)
+                      example: 6999
+                    MU:
+                      type: number
+                      description: Mark Up (written to all unlocked suppliers)
+                      example: 4.31
+                    KDV:
+                      type: number
+                      description: Tax rate (written to all unlocked suppliers)
+                      example: 0.1
+                    GKUR:
+                      type: number
+                      description: Exchange rate (written to all unlocked suppliers)
+                      example: 55
+                    FOB:
+                      type: number
+                      description: FOB value (written ONLY to SupplierId=2)
+                      example: 12.5
+                    KHDF:
+                      type: number
+                      description: Target fabric cost (written ONLY to SupplierId=2)
+                      example: 5.48
+                    VRG:
+                      type: number
+                      description: VRG value for SupplierId=2 (other suppliers use CountryId+BrandId mapping)
+                      example: 1.38
+                    NAVL:
+                      type: number
+                      description: NAVL value for SupplierId=2 (other suppliers use CountryId+BrandId mapping)
+                      example: 1.1
               example:
                 workflowdefination: "UPDATED_STYLE_OVERVIEW"
                 moduleId: "158"
+                decisionTableValues:
+                  PSF: 6999
+                  MU: 4.31
+                  KDV: 0.1
+                  GKUR: 55
+                  FOB: 12.5
+                  KHDF: 5.48
+                  VRG: 1.38
+                  NAVL: 1.1
           text/xml:
             schema:
               type: string

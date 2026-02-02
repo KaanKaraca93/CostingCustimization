@@ -92,15 +92,16 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
       console.log(`✅ Decision values received from ION input:`, decisionValues);
     }
 
-    // Code mapping: Decision Table Key -> Cost Element Code
-    // Only Type=3 (calculated) cost elements will be patched
+    // Code mapping: Input Key -> Cost Element Code + Target Suppliers
+    // "allUnlocked": Write to all unlocked suppliers
+    // "supplierId2": Write only to SupplierId=2
     const codeMapping = {
-      'SegmentPSF': { code: 'SPSF', outputKey: 'SPSF' },
-      'MU': { code: 'MU', outputKey: 'MU' },
-      'KumaşHedefMaliyet': { code: 'KHDF', outputKey: 'KHDF' },
-      'AlımFiyatı_TRY': { code: 'ALMTRY', outputKey: 'ALMTRY' },
-      'HesaplamaKuru': { code: 'GKUR', outputKey: 'GKUR' },
-      'KDV': { code: 'KDV', outputKey: 'KDV' }
+      'PSF': { code: 'SPSF', target: 'allUnlocked' },
+      'MU': { code: 'MU', target: 'allUnlocked' },
+      'KDV': { code: 'KDV', target: 'allUnlocked' },
+      'GKUR': { code: 'GKUR', target: 'allUnlocked' },
+      'FOB': { code: 'FOB', target: 'supplierId2' },
+      'KHDF': { code: 'KHDF', target: 'supplierId2' }
     };
 
     /* ===== EXTENDED FIELD MAPPING - DISABLED (handled by ION) =====
@@ -140,8 +141,8 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
     const styleCostElements = styleData.costElements || [];
     console.log(`📋 Total Cost Elements: ${styleCostElements.length}`);
 
-    // Process each mapping - NO TYPE FILTER, just look for the codes we need
-    for (const [decisionKey, mapping] of Object.entries(codeMapping)) {
+    // Process each mapping with target supplier logic
+    for (const [inputKey, mapping] of Object.entries(codeMapping)) {
       // Find element with this code (regardless of Type)
       const element = styleCostElements.find(elem => elem.code === mapping.code);
 
@@ -150,45 +151,59 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
         continue;
       }
 
-      console.log(`📌 Found element: Code=${element.code}, Type=${element.type}, Name=${element.name}`);
+      console.log(`📌 Found element: Code=${element.code}, Type=${element.type}, Name=${element.name}, Target=${mapping.target}`);
 
-      // Get value from decision table (or 0 if not found)
-      let decisionValue = 0;
-      if (decisionValues && decisionValues[decisionKey] !== undefined) {
-        decisionValue = decisionValues[decisionKey];
+      // Get value from input (or 0 if not found)
+      let inputValue = 0;
+      if (decisionValues && decisionValues[inputKey] !== undefined) {
+        inputValue = decisionValues[inputKey];
       } else {
-        console.log(`   ℹ️  No decision table value for ${decisionKey}, using 0`);
+        console.log(`   ℹ️  No input value for ${inputKey}, using 0`);
       }
 
       // Handle undefined/NaN values -> set to 0
-      if (isNaN(decisionValue) || !isFinite(decisionValue)) {
-        console.warn(`⚠️  Invalid value for ${decisionKey}, setting to 0`);
-        decisionValue = 0;
+      if (isNaN(inputValue) || !isFinite(inputValue)) {
+        console.warn(`⚠️  Invalid value for ${inputKey}, setting to 0`);
+        inputValue = 0;
       }
       
       // Round to 2 decimal places
-      decisionValue = Math.round(decisionValue * 100) / 100;
+      inputValue = Math.round(inputValue * 100) / 100;
 
-      // Find StyleCostingSupplierVals for ALL UNLOCKED suppliers
+      // Find StyleCostingSupplierVals based on target
       const supplierVals = element.supplierValues || [];
       
       let foundCount = 0;
-      for (const unlockedSupplier of unlockedSuppliers) {
-        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
+      let targetSuppliers = [];
+      
+      if (mapping.target === 'allUnlocked') {
+        // Write to ALL unlocked suppliers
+        targetSuppliers = unlockedSuppliers;
+      } else if (mapping.target === 'supplierId2') {
+        // Write ONLY to SupplierId=2
+        targetSuppliers = unlockedSuppliers.filter(s => s.id === 2);
+        if (targetSuppliers.length === 0) {
+          console.log(`   ⚠️  SupplierId=2 not found in unlocked suppliers (skipping ${mapping.code})`);
+          continue;
+        }
+      }
+      
+      for (const targetSupplier of targetSuppliers) {
+        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === targetSupplier.id);
         
         if (targetVal) {
           // Add to supplierValues array for PATCH
           result.supplierValues.push({
             Id: targetVal.Id,
-            Value: decisionValue,
+            Value: inputValue,
             elementCode: mapping.code,
-            supplierId: unlockedSupplier.id
+            supplierId: targetSupplier.id
           });
           foundCount++;
         }
       }
 
-      console.log(`✅ ${mapping.code}: Type=${element.type}, Value=${decisionValue}, Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
+      console.log(`✅ ${mapping.code}: Type=${element.type}, Value=${inputValue}, Target=${mapping.target}, Found ${foundCount}/${targetSuppliers.length} supplier values`);
     }
 
     /* ===== EXTENDED FIELDS PROCESSING - DISABLED (handled by ION) =====
@@ -224,10 +239,12 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
     }
     ===== END DISABLED ===== */
 
-    // ===== PROCESS VRG AND NAVL (NEW: CountryId + BrandId based) =====
-    console.log('\n🌍 Processing VRG and NAVL based on CountryId + BrandId...');
+    // ===== PROCESS VRG AND NAVL (HYBRID: Input for SupplierId=2, Mapping for others) =====
+    console.log('\n🌍 Processing VRG and NAVL with hybrid logic...');
+    console.log('   📌 SupplierId=2: From input values');
+    console.log('   📌 Other suppliers: From CountryId + BrandId mapping');
     
-    // Process VRG and NAVL - values depend on CountryId AND BrandId
+    // Process VRG and NAVL with hybrid logic
     const countryBasedElements = ['VRG', 'NAVL'];
     
     for (const elementCode of countryBasedElements) {
@@ -247,19 +264,35 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
         const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
         
         if (targetVal) {
-          // NEW: Use mapping table with CountryId + BrandId
-          const vrgNavlValues = findVrgNavl(unlockedSupplier.countryId, brandId);
-          const value = elementCode === 'VRG' ? vrgNavlValues.VRG : vrgNavlValues.NAVL;
+          let value = 0;
+          
+          // HYBRID LOGIC: SupplierId=2 uses input, others use mapping
+          if (unlockedSupplier.id === 2) {
+            // Use input value for SupplierId=2
+            if (decisionValues && decisionValues[elementCode] !== undefined) {
+              value = decisionValues[elementCode];
+              console.log(`   ✅ Supplier 2 (Main): ${elementCode}=${value} (from input)`);
+            } else {
+              console.warn(`   ⚠️  No input value for ${elementCode} for SupplierId=2, using 0`);
+              value = 0;
+            }
+          } else {
+            // Use mapping table with CountryId + BrandId for other suppliers
+            const vrgNavlValues = findVrgNavl(unlockedSupplier.countryId, brandId);
+            value = elementCode === 'VRG' ? vrgNavlValues.VRG : vrgNavlValues.NAVL;
+            console.log(`   📍 Supplier ${unlockedSupplier.id} (CountryId=${unlockedSupplier.countryId}): ${elementCode}=${value} (from mapping)`);
+          }
+          
+          // Round to 2 decimal places
+          value = Math.round(value * 100) / 100;
           
           result.supplierValues.push({
             Id: targetVal.Id,
-            Value: Math.round(value * 100) / 100, // Round to 2 decimals
+            Value: value,
             elementCode: elementCode,
             supplierId: unlockedSupplier.id
           });
           foundCount++;
-          
-          console.log(`   Supplier ${unlockedSupplier.id} (CountryId=${unlockedSupplier.countryId}, BrandId=${brandId}): ${elementCode}=${value}`);
         }
       }
       
@@ -295,40 +328,10 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
       console.log(`ℹ️  RPSF element not found or RetailPrice is null (skipping)`);
     }
 
-    // ===== GET GKUR VALUE (used by FOB) =====
-    // NEW: GKUR comes from input (decisionTableValues)
-    const gkurValue = (decisionValues && decisionValues.HesaplamaKuru) || 0;
-
-    // ===== PROCESS FOB (NumericValue2 × GKUR) =====
-    console.log('\n📦 Processing FOB (MerchHedef × GKUR)...');
-    
-    const fobElement = styleCostElements.find(elem => elem.code === 'FOB');
-    
-    if (fobElement && styleInfo.numericValue2 !== null && styleInfo.numericValue2 !== undefined) {
-      console.log(`📌 Found FOB element, NumericValue2=${styleInfo.numericValue2}, GKUR=${gkurValue}`);
-      
-      const fobValue = Math.round((styleInfo.numericValue2 * gkurValue) * 100) / 100; // Round to 2 decimals
-      const supplierVals = fobElement.supplierValues || [];
-      let foundCount = 0;
-      
-      for (const unlockedSupplier of unlockedSuppliers) {
-        const targetVal = supplierVals.find(val => val.StyleCostingSupplierId === unlockedSupplier.id);
-        
-        if (targetVal) {
-          result.supplierValues.push({
-            Id: targetVal.Id,
-            Value: Math.round(fobValue * 100) / 100, // Round to 2 decimals
-            elementCode: 'FOB',
-            supplierId: unlockedSupplier.id
-          });
-          foundCount++;
-        }
-      }
-      
-      console.log(`✅ FOB: Value=${fobValue} (${styleInfo.numericValue2} × ${gkurValue}), Found ${foundCount}/${unlockedSuppliers.length} supplier values`);
-    } else {
-      console.log(`ℹ️  FOB element not found or NumericValue2 is null (skipping)`);
-    }
+    /* ===== FOB CALCULATION REMOVED - NOW COMES FROM INPUT =====
+    // FOB is now provided directly from input (decisionTableValues.FOB)
+    // and written only to SupplierId=2 via codeMapping logic above
+    ===== END REMOVED ===== */
 
     // ===== CALCULATE TYPE=3 (CALCULATED) ELEMENTS =====
     console.log('\n🧮 Calculating Type=3 (Calculated) Elements...');
@@ -336,24 +339,25 @@ function processStyleToSegmentPSF(styleData, decisionTableValues = null) {
     // Build override values map with all Type=1 values we've set
     const overrideValues = new Map();
     
-    // Add decision table values
+    // Add input values (new key names)
     if (decisionValues) {
-      overrideValues.set('SPSF', decisionValues.SegmentPSF || 0);
+      overrideValues.set('SPSF', decisionValues.PSF || 0);
       overrideValues.set('MU', decisionValues.MU || 0);
-      overrideValues.set('KHDF', decisionValues.KumaşHedefMaliyet || 0);
-      overrideValues.set('ALMTRY', decisionValues.AlımFiyatı_TRY || 0);
-      overrideValues.set('GKUR', decisionValues.HesaplamaKuru || 0);
+      overrideValues.set('KHDF', decisionValues.KHDF || 0);
+      overrideValues.set('FOB', decisionValues.FOB || 0);
+      overrideValues.set('GKUR', decisionValues.GKUR || 0);
       overrideValues.set('KDV', decisionValues.KDV || 0);
+      overrideValues.set('VRG', decisionValues.VRG || 0);
+      overrideValues.set('NAVL', decisionValues.NAVL || 0);
     }
     
-    // Add VRG and NAVL (NEW: use mapping with CountryId + BrandId)
-    // For formula calculation, we'll use first supplier's values as representative
-    if (unlockedSuppliers.length > 0) {
-      const firstSupplier = unlockedSuppliers[0];
-      const vrgNavlValues = findVrgNavl(firstSupplier.countryId, brandId);
-      overrideValues.set('VRG', vrgNavlValues.VRG);
-      overrideValues.set('NAVL', vrgNavlValues.NAVL);
-    }
+    // For suppliers other than SupplierId=2, VRG/NAVL comes from mapping
+    // But for formula calculation, we'll use SupplierId=2's values (from input) as representative
+    console.log(`   📊 Using input values for Type=3 calculations (SupplierId=2 values as representative)`);
+    console.log(`   📊 SPSF=${overrideValues.get('SPSF')}, MU=${overrideValues.get('MU')}, KHDF=${overrideValues.get('KHDF')}`);
+    console.log(`   📊 FOB=${overrideValues.get('FOB')}, GKUR=${overrideValues.get('GKUR')}, KDV=${overrideValues.get('KDV')}`);
+    console.log(`   📊 VRG=${overrideValues.get('VRG')}, NAVL=${overrideValues.get('NAVL')}`);
+    
     
     // Add RPSF if available
     if (styleInfo.retailPrice !== null && styleInfo.retailPrice !== undefined) {
