@@ -662,13 +662,25 @@ router.post('/calculate-cost-fields', async (req, res) => {
       console.log(`💱 Cost5 converted to TRY: ${cost5 / exchangeRate} USD × ${exchangeRate} = ${cost5} TRY`);
     }
 
-    // 2. Calculate Cost9 = (AlimFiyat_TRY - Cost5) * NumericValue1
-    const cost9 = (alimFiyatTRY - cost5) * numericValue1;
-    console.log(`✅ Cost9: (${alimFiyatTRY} - ${cost5}) * ${numericValue1} = ${cost9}`);
-
-    // 3. Calculate Cost8 = (AlimFiyat_TRY - TCOST) * Quantity
-    const cost8 = (alimFiyatTRY - tcost) * quantity;
-    console.log(`✅ Cost8: (${alimFiyatTRY} - ${tcost}) * ${quantity} = ${cost8}`);
+    // Determine multiplier: Quantity if > 0, otherwise NumericValue1
+    let cost8 = 0;
+    let cost9 = 0;
+    
+    if (quantity && quantity > 0) {
+      // Use Quantity for both calculations
+      console.log(`\n📊 Using Quantity (${quantity}) for calculations`);
+      cost9 = (alimFiyatTRY - cost5) * quantity;
+      cost8 = (alimFiyatTRY - tcost) * quantity;
+      console.log(`✅ Cost9: (${alimFiyatTRY} - ${cost5}) * ${quantity} = ${cost9}`);
+      console.log(`✅ Cost8: (${alimFiyatTRY} - ${tcost}) * ${quantity} = ${cost8}`);
+    } else {
+      // Use NumericValue1 for Cost9 only
+      console.log(`\n📊 Quantity is 0 or null, using NumericValue1 (${numericValue1}) for Cost9`);
+      cost9 = (alimFiyatTRY - cost5) * numericValue1;
+      cost8 = 0; // Cost8 not calculated when Quantity is 0
+      console.log(`✅ Cost9: (${alimFiyatTRY} - ${cost5}) * ${numericValue1} = ${cost9}`);
+      console.log(`⚠️  Cost8: Not calculated (Quantity is 0 or null)`);
+    }
 
     // ========== PATCH TO PLM ==========
     
