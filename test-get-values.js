@@ -8,7 +8,7 @@ async function testGetCostElementValues() {
     const url = 'http://localhost:3000/api/workflow/get-cost-element-values';
     
     const payload = {
-      filter: "StyleId eq 10596"
+      filter: "StyleId eq 11457"
     };
 
     console.log('📤 Request:');

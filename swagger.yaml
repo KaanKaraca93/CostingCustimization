@@ -279,7 +279,7 @@ paths:
       description: |
         **Retrieves specific cost element values from PLM for the main supplier.**
         
-        This endpoint fetches cost element values (RHDF, GKUR, TKMS, TAST, TISC, TTRM, TISL, TDGR)
+        This endpoint fetches cost element values (GKUR, TKMS, TAST, TISC, TTRM, TISL, TDGR, TCOST, MCOST, RMU)
         for a specific style. It automatically selects the main supplier based on:
         - IsMainVersion = true
         - IsActive = true
@@ -321,7 +321,6 @@ paths:
                 styleCode: "IS1230034100"
                 selectedSupplierId: 178
                 values:
-                  RHDF: 0.000000
                   GKUR: 0.000000
                   TKMS: 0.000000
                   TAST: 0.000000
@@ -554,11 +553,6 @@ components:
           type: object
           description: Cost element values for the selected supplier
           properties:
-            RHDF:
-              type: number
-              nullable: true
-              description: RHDF cost element value
-              example: 0.000000
             GKUR:
               type: number
               nullable: true
@@ -598,6 +592,11 @@ components:
               type: number
               nullable: true
               description: TCOST (Total Cost) cost element value
+              example: 0.000000
+            MCOST:
+              type: number
+              nullable: true
+              description: MCOST (Material Cost) cost element value
               example: 0.000000
             RMU:
               type: number
