@@ -630,6 +630,7 @@ router.post('/calculate-cost-fields', async (req, res) => {
 
     // ========== CALCULATION LOGIC ==========
     
+    const exchangeRate = 55; // TRY/USD exchange rate
     let cost5 = 0;
     
     // 1. Calculate Cost5
@@ -653,6 +654,12 @@ router.post('/calculate-cost-fields', async (req, res) => {
       console.log(`\n✅ Cost5 (SelectUretim=true): ${cost5} (from Cost7)`);
     } else {
       console.log(`\n⚠️  No condition met for Cost5 calculation, remains 0`);
+    }
+
+    // Convert Cost5 to TRY if it's in USD (< 100 indicates USD)
+    if (cost5 > 0 && cost5 < 100) {
+      cost5 = cost5 * exchangeRate;
+      console.log(`💱 Cost5 converted to TRY: ${cost5 / exchangeRate} USD × ${exchangeRate} = ${cost5} TRY`);
     }
 
     // 2. Calculate Cost9 = (AlimFiyat_TRY - Cost5) * NumericValue1
