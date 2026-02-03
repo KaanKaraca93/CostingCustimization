@@ -403,6 +403,129 @@ paths:
                 message: "Error retrieving cost element values"
                 timestamp: "2025-01-21T12:00:00.000Z"
 
+  /api/workflow/calculate-cost-fields:
+    post:
+      tags:
+        - Costing
+      summary: Calculate and Update Cost5, Cost8, Cost9 Fields
+      description: |
+        **Calculates and patches Cost5, Cost8, and Cost9 fields to PLM.**
+        
+        This endpoint performs calculations based on style properties and extended fields,
+        then patches the calculated values back to PLM.
+        
+        **Calculation Logic:**
+        
+        **Cost5 Calculation** (based on conditions):
+        - If SelectYD = true: Cost5 = Cost4 × brandMultiplier × 1.1
+          - BrandId=4: brandMultiplier = 1.38
+          - BrandId=8: brandMultiplier = 1.51
+          - Other: brandMultiplier = 1
+        - If SelectLocal = true: Cost5 = Cost6
+        - If SelectUretim = true: Cost5 = Cost7
+        - Otherwise: Cost5 = 0
+        
+        **Cost9 Calculation:**
+        Cost9 = (AlımFiyat_TRY - Cost5) × NumericValue1
+        
+        **Cost8 Calculation:**
+        Cost8 = (AlımFiyat_TRY - TCOST) × Quantity
+        
+        **Process Flow:**
+        1. Fetch style data from PLM (BrandId, NumericValue1, Quantity, extended fields)
+        2. Extract required extended field values (AlımFiyat_TRY, Cost4-7, TCOST, Select flags)
+        3. Calculate Cost5 based on conditions
+        4. Calculate Cost9 and Cost8
+        5. PATCH calculated values to PLM extended fields
+        6. Return calculation results
+        
+      operationId: calculateCostFields
+      requestBody:
+        description: Style ID for which to calculate cost fields
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - styleId
+              properties:
+                styleId:
+                  type: string
+                  description: Style ID from PLM
+                  example: "11457"
+            example:
+              styleId: "11457"
+      responses:
+        '200':
+          description: Successfully calculated and patched cost fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculateCostFieldsResponse'
+              example:
+                success: true
+                styleId: "11457"
+                styleCode: "IW6260002104"
+                inputs:
+                  brandId: 4
+                  numericValue1: 150
+                  quantity: 200
+                  alimFiyatTRY: 1000
+                  cost4: 10
+                  cost6: 12
+                  cost7: 15
+                  tcost: 1688.5
+                  selectYD: true
+                  selectUretim: false
+                  selectLocal: false
+                calculated:
+                  cost5: 15.18
+                  cost8: -137700
+                  cost9: 147723
+                patchResults:
+                  styleExtendedFieldValue: "Success"
+                  message: "Extended fields patched successfully"
+                message: "Cost fields calculated and patched successfully"
+                timestamp: "2026-02-03T09:52:30.814Z"
+        '400':
+          description: Bad Request - Missing styleId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                errorCode: "MISSING_STYLE_ID"
+                error: "StyleId is required"
+                message: "Please provide a styleId parameter"
+                timestamp: "2026-02-03T09:00:00.000Z"
+        '404':
+          description: Style not found in PLM
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                errorCode: "STYLE_NOT_FOUND"
+                error: "Style not found"
+                message: "No style found with the provided StyleId"
+                styleId: "99999"
+                timestamp: "2026-02-03T09:00:00.000Z"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                errorCode: "CALCULATION_ERROR"
+                error: "Failed to patch extended fields"
+                message: "Error calculating cost fields"
+                timestamp: "2026-02-03T09:00:00.000Z"
+
 components:
   schemas:
     HealthResponse:
@@ -626,6 +749,115 @@ components:
         - selectedSupplierId
         - values
         - extendedFieldIds
+        - timestamp
+
+    CalculateCostFieldsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indicates successful calculation and patch
+          example: true
+        styleId:
+          type: string
+          description: Style ID from request
+          example: "11457"
+        styleCode:
+          type: string
+          description: Style code from PLM
+          example: "IW6260002104"
+        inputs:
+          type: object
+          description: Input values used for calculations
+          properties:
+            brandId:
+              type: integer
+              description: Brand ID from PLM
+              example: 4
+            numericValue1:
+              type: number
+              description: NumericValue1 from PLM style
+              example: 150
+            quantity:
+              type: number
+              nullable: true
+              description: Quantity from PLM style
+              example: 200
+            alimFiyatTRY:
+              type: number
+              description: AlımFiyat_TRY extended field value
+              example: 1000
+            cost4:
+              type: number
+              description: Cost4 extended field value
+              example: 10
+            cost6:
+              type: number
+              description: Cost6 extended field value
+              example: 12
+            cost7:
+              type: number
+              description: Cost7 extended field value
+              example: 15
+            tcost:
+              type: number
+              description: TCOST extended field value
+              example: 1688.5
+            selectYD:
+              type: boolean
+              description: SelectYD checkbox value
+              example: true
+            selectUretim:
+              type: boolean
+              description: SelectUretim checkbox value
+              example: false
+            selectLocal:
+              type: boolean
+              description: SelectLocal checkbox value
+              example: false
+        calculated:
+          type: object
+          description: Calculated cost field values
+          properties:
+            cost5:
+              type: number
+              description: Calculated Cost5 value
+              example: 15.18
+            cost8:
+              type: number
+              description: Calculated Cost8 = (AlımFiyat_TRY - TCOST) × Quantity
+              example: -137700
+            cost9:
+              type: number
+              description: Calculated Cost9 = (AlımFiyat_TRY - Cost5) × NumericValue1
+              example: 147723
+        patchResults:
+          type: object
+          description: Results from PATCH operation to PLM
+          properties:
+            styleExtendedFieldValue:
+              type: string
+              example: "Success"
+            message:
+              type: string
+              example: "Extended fields patched successfully"
+        message:
+          type: string
+          description: Success message
+          example: "Cost fields calculated and patched successfully"
+        timestamp:
+          type: string
+          format: date-time
+          description: Server timestamp
+          example: "2026-02-03T09:52:30.814Z"
+      required:
+        - success
+        - styleId
+        - styleCode
+        - inputs
+        - calculated
+        - patchResults
+        - message
         - timestamp
 
   securitySchemes:
