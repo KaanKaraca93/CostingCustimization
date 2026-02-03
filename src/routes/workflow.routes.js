@@ -526,5 +526,215 @@ router.post('/get-cost-element-values', async (req, res) => {
   }
 });
 
+/**
+ * Calculate and update Cost5, Cost8, Cost9 for a style
+ * POST /api/workflow/calculate-cost-fields
+ * Body: { styleId: "11457" }
+ */
+router.post('/calculate-cost-fields', async (req, res) => {
+  try {
+    const { styleId } = req.body;
+    
+    if (!styleId) {
+      return res.status(400).json({ 
+        success: false,
+        errorCode: 'MISSING_STYLE_ID',
+        error: 'StyleId is required',
+        message: 'Please provide a styleId parameter',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log('\n🧮 ====== Calculate Cost Fields Request ======');
+    console.log(`📋 StyleId: ${styleId}`);
+
+    // Build OData query to get required fields
+    const extendedFieldsExpand = 'STYLEEXTENDEDFIELDVALUES($select=StyleId,Id,ExtFldId,NumberValue,CheckboxValue;$orderby=ExtFldId;$expand=STYLEEXTENDEDFIELDS($select=Name))';
+    const odataQuery = `$select=StyleId,StyleCode,BrandId,Quantity,NumericValue1&$filter=styleid eq ${styleId}&$expand=${extendedFieldsExpand}`;
+
+    console.log('🌐 Fetching data from PLM...');
+    
+    // Fetch data from PLM
+    const response = await plmService.getStyleData(odataQuery);
+
+    if (!response || !response.value || response.value.length === 0) {
+      return res.status(404).json({
+        success: false,
+        errorCode: 'STYLE_NOT_FOUND',
+        error: 'Style not found',
+        message: 'No style found with the provided StyleId',
+        styleId: styleId,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const styleData = response.value[0];
+    console.log(`✅ Style found: ${styleData.StyleCode} (BrandId: ${styleData.BrandId})`);
+
+    const brandId = styleData.BrandId;
+    const numericValue1 = styleData.NumericValue1 || 0;
+    const quantity = styleData.Quantity || 0;
+
+    console.log(`📊 BrandId: ${brandId}, NumericValue1: ${numericValue1}, Quantity: ${quantity}`);
+
+    // Extract extended field values by name
+    const extendedFields = styleData.StyleExtendedFieldValues || [];
+    const fieldMap = {};
+    
+    for (const field of extendedFields) {
+      const fieldName = field.StyleExtendedFields?.Name;
+      if (fieldName) {
+        // Parse NumberValue - handle null, empty string, or actual number
+        let numValue = 0;
+        if (field.NumberValue !== null && field.NumberValue !== undefined && field.NumberValue !== '') {
+          numValue = parseFloat(field.NumberValue) || 0;
+        }
+        
+        fieldMap[fieldName] = {
+          id: field.Id,
+          extFldId: field.ExtFldId,
+          value: numValue,
+          checkBoxValue: field.CheckboxValue || false  // Note: lowercase 'b' in API
+        };
+      }
+    }
+
+    // Required fields
+    const requiredFields = ['Alım Fiyatı_TRY', 'Cost4', 'Cost5', 'Cost6', 'Cost7', 'Cost8', 'Cost9', 'SelectYD', 'SelectUretim', 'SelectLocal', 'TCOST'];
+    
+    // Check if all required fields exist
+    const missingFields = requiredFields.filter(f => !fieldMap[f]);
+    if (missingFields.length > 0) {
+      console.warn(`⚠️  Missing fields: ${missingFields.join(', ')}`);
+    }
+
+    // Extract values
+    const alimFiyatTRY = fieldMap['Alım Fiyatı_TRY']?.value || 0;
+    const cost4 = fieldMap['Cost4']?.value || 0;
+    const cost6 = fieldMap['Cost6']?.value || 0;
+    const cost7 = fieldMap['Cost7']?.value || 0;
+    const tcost = fieldMap['TCOST']?.value || 0;
+    const selectYD = fieldMap['SelectYD']?.checkBoxValue || false;
+    const selectUretim = fieldMap['SelectUretim']?.checkBoxValue || false;
+    const selectLocal = fieldMap['SelectLocal']?.checkBoxValue || false;
+
+    console.log('\n📋 Input Values:');
+    console.log(`   Alım Fiyatı_TRY: ${alimFiyatTRY}`);
+    console.log(`   Cost4: ${cost4}`);
+    console.log(`   Cost6: ${cost6}`);
+    console.log(`   Cost7: ${cost7}`);
+    console.log(`   TCOST: ${tcost}`);
+    console.log(`   SelectYD: ${selectYD}`);
+    console.log(`   SelectUretim: ${selectUretim}`);
+    console.log(`   SelectLocal: ${selectLocal}`);
+
+    // ========== CALCULATION LOGIC ==========
+    
+    let cost5 = 0;
+    
+    // 1. Calculate Cost5
+    if (selectYD === true) {
+      // Cost5 = Cost4 * brandMultiplier * 1.1
+      let brandMultiplier = 1;
+      if (brandId === 4) {
+        brandMultiplier = 1.38;
+      } else if (brandId === 8) {
+        brandMultiplier = 1.51;
+      }
+      cost5 = cost4 * brandMultiplier * 1.1;
+      console.log(`\n✅ Cost5 (SelectYD=true): ${cost4} * ${brandMultiplier} * 1.1 = ${cost5}`);
+    } else if (selectLocal === true) {
+      // Cost5 = Cost6
+      cost5 = cost6;
+      console.log(`\n✅ Cost5 (SelectLocal=true): ${cost5} (from Cost6)`);
+    } else if (selectUretim === true) {
+      // Cost5 = Cost7
+      cost5 = cost7;
+      console.log(`\n✅ Cost5 (SelectUretim=true): ${cost5} (from Cost7)`);
+    } else {
+      console.log(`\n⚠️  No condition met for Cost5 calculation, remains 0`);
+    }
+
+    // 2. Calculate Cost9 = (AlimFiyat_TRY - Cost5) * NumericValue1
+    const cost9 = (alimFiyatTRY - cost5) * numericValue1;
+    console.log(`✅ Cost9: (${alimFiyatTRY} - ${cost5}) * ${numericValue1} = ${cost9}`);
+
+    // 3. Calculate Cost8 = (AlimFiyat_TRY - TCOST) * Quantity
+    const cost8 = (alimFiyatTRY - tcost) * quantity;
+    console.log(`✅ Cost8: (${alimFiyatTRY} - ${tcost}) * ${quantity} = ${cost8}`);
+
+    // ========== PATCH TO PLM ==========
+    
+    console.log('\n💾 Patching calculated values to PLM...');
+    
+    const patchData = [];
+    
+    if (fieldMap['Cost5']) {
+      patchData.push({
+        Id: fieldMap['Cost5'].id,
+        NumberValue: cost5
+      });
+    }
+    
+    if (fieldMap['Cost8']) {
+      patchData.push({
+        Id: fieldMap['Cost8'].id,
+        NumberValue: cost8
+      });
+    }
+    
+    if (fieldMap['Cost9']) {
+      patchData.push({
+        Id: fieldMap['Cost9'].id,
+        NumberValue: cost9
+      });
+    }
+
+    console.log(`📤 Patching ${patchData.length} fields...`);
+    
+    const plmPatchService = require('../services/plmPatchService');
+    const patchResults = await plmPatchService.patchExtendedFields(patchData);
+
+    console.log('✅ PATCH completed successfully');
+
+    return res.status(200).json({
+      success: true,
+      styleId: styleId,
+      styleCode: styleData.StyleCode,
+      inputs: {
+        brandId: brandId,
+        numericValue1: numericValue1,
+        quantity: quantity,
+        alimFiyatTRY: alimFiyatTRY,
+        cost4: cost4,
+        cost6: cost6,
+        cost7: cost7,
+        tcost: tcost,
+        selectYD: selectYD,
+        selectUretim: selectUretim,
+        selectLocal: selectLocal
+      },
+      calculated: {
+        cost5: cost5,
+        cost8: cost8,
+        cost9: cost9
+      },
+      patchResults: patchResults,
+      message: 'Cost fields calculated and patched successfully',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error in calculate-cost-fields:', error);
+    return res.status(500).json({
+      success: false,
+      errorCode: 'CALCULATION_ERROR',
+      error: error.message,
+      message: 'Error calculating cost fields',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = router;
 

@@ -219,6 +219,55 @@ class PLMPatchService {
       throw error;
     }
   }
+
+  /**
+   * PATCH extended field values
+   * @param {Array} extendedFieldData - Array of {Id, NumberValue} objects
+   * @returns {Object} PATCH result
+   */
+  async patchExtendedFields(extendedFieldData) {
+    try {
+      if (!extendedFieldData || extendedFieldData.length === 0) {
+        console.warn('⚠️  No extended field data to patch');
+        return {
+          styleCostingSupplierValue: '',
+          styleExtendedFieldValue: '',
+          message: 'No data to patch'
+        };
+      }
+
+      console.log(`\n📤 ====== PATCHING ${extendedFieldData.length} Extended Field Values ======`);
+
+      const token = await tokenService.getAccessToken();
+      const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
+
+      // PATCH StyleExtendedFieldValues (bulk update)
+      const extendedFieldUrl = `${this.baseUrl}/STYLEEXTENDEDFIELDVALUES`;
+      
+      console.log(`📍 URL: ${extendedFieldUrl}`);
+      console.log(`📦 Payload (${extendedFieldData.length} items):`, JSON.stringify(extendedFieldData.slice(0, 3), null, 2));
+
+      const extFieldResponse = await axios.patch(extendedFieldUrl, extendedFieldData, { headers });
+
+      console.log(`✅ Extended field PATCH response:`, extFieldResponse.status, extFieldResponse.statusText);
+
+      return {
+        styleExtendedFieldValue: extFieldResponse.data || 'Success',
+        message: 'Extended fields patched successfully'
+      };
+
+    } catch (error) {
+      console.error('❌ Error in patchExtendedFields:', error.message);
+      if (error.response) {
+        console.error('Response status:', error.response.status);
+        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
+  }
 }
 
 // Create singleton instance
