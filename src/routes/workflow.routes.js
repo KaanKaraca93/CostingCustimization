@@ -550,7 +550,7 @@ router.post('/calculate-cost-fields', async (req, res) => {
 
     // Build OData query to get required fields
     const extendedFieldsExpand = 'STYLEEXTENDEDFIELDVALUES($select=StyleId,Id,ExtFldId,NumberValue,CheckboxValue;$orderby=ExtFldId;$expand=STYLEEXTENDEDFIELDS($select=Name))';
-    const odataQuery = `$select=StyleId,StyleCode,BrandId,Quantity,NumericValue1&$filter=styleid eq ${styleId}&$expand=${extendedFieldsExpand}`;
+    const odataQuery = `$select=StyleId,StyleCode,BrandId,Quantity,NumericValue1,DeliveryIdList&$filter=styleid eq ${styleId}&$expand=${extendedFieldsExpand}`;
 
     console.log('🌐 Fetching data from PLM...');
     
@@ -574,8 +574,10 @@ router.post('/calculate-cost-fields', async (req, res) => {
     const brandId = styleData.BrandId;
     const numericValue1 = styleData.NumericValue1 || 0;
     const quantity = styleData.Quantity || 0;
+    const deliveryIdList = styleData.DeliveryIdList || '';
 
     console.log(`📊 BrandId: ${brandId}, NumericValue1: ${numericValue1}, Quantity: ${quantity}`);
+    console.log(`📦 DeliveryIdList: ${deliveryIdList}`);
 
     // Extract extended field values by name
     const extendedFields = styleData.StyleExtendedFieldValues || [];
@@ -600,7 +602,7 @@ router.post('/calculate-cost-fields', async (req, res) => {
     }
 
     // Required fields
-    const requiredFields = ['Alım Fiyatı_TRY', 'Cost4', 'Cost5', 'Cost6', 'Cost7', 'Cost8', 'Cost9', 'SelectYD', 'SelectUretim', 'SelectLocal', 'TCOST'];
+    const requiredFields = ['Alım Fiyatı_TRY', 'Cost4', 'Cost5', 'Cost6', 'Cost7', 'Cost8', 'Cost9', 'Cost10', 'SelectYD', 'SelectUretim', 'SelectLocal', 'TCOST', 'Cur2', 'Cur3', 'Cur4'];
     
     // Check if all required fields exist
     const missingFields = requiredFields.filter(f => !fieldMap[f]);
@@ -613,24 +615,77 @@ router.post('/calculate-cost-fields', async (req, res) => {
     const cost4 = fieldMap['Cost4']?.value || 0;
     const cost6 = fieldMap['Cost6']?.value || 0;
     const cost7 = fieldMap['Cost7']?.value || 0;
+    const cost10 = fieldMap['Cost10']?.value || 55; // Default exchange rate
     const tcost = fieldMap['TCOST']?.value || 0;
-    const selectYD = fieldMap['SelectYD']?.checkBoxValue || false;
-    const selectUretim = fieldMap['SelectUretim']?.checkBoxValue || false;
-    const selectLocal = fieldMap['SelectLocal']?.checkBoxValue || false;
+    let selectYD = fieldMap['SelectYD']?.checkBoxValue || false;
+    let selectUretim = fieldMap['SelectUretim']?.checkBoxValue || false;
+    let selectLocal = fieldMap['SelectLocal']?.checkBoxValue || false;
+    
+    // Currency fields (for conversion check)
+    const cur2 = fieldMap['Cur2']?.value || null;
+    const cur3 = fieldMap['Cur3']?.value || null;
+    const cur4 = fieldMap['Cur4']?.value || null;
 
     console.log('\n📋 Input Values:');
     console.log(`   Alım Fiyatı_TRY: ${alimFiyatTRY}`);
     console.log(`   Cost4: ${cost4}`);
     console.log(`   Cost6: ${cost6}`);
     console.log(`   Cost7: ${cost7}`);
+    console.log(`   Cost10: ${cost10}`);
     console.log(`   TCOST: ${tcost}`);
     console.log(`   SelectYD: ${selectYD}`);
     console.log(`   SelectUretim: ${selectUretim}`);
     console.log(`   SelectLocal: ${selectLocal}`);
+    console.log(`   Cur2: ${cur2}, Cur3: ${cur3}, Cur4: ${cur4}`);
 
     // ========== CALCULATION LOGIC ==========
     
-    const exchangeRate = 55; // TRY/USD exchange rate
+    // Check if currency conversion is needed (Cur2, Cur3, or Cur4 = 840, 842, 844, 846)
+    const currencyConversionCodes = [840, 842, 844, 846];
+    const needsCurrencyConversion = 
+      (cur2 && currencyConversionCodes.includes(cur2)) ||
+      (cur3 && currencyConversionCodes.includes(cur3)) ||
+      (cur4 && currencyConversionCodes.includes(cur4));
+    
+    console.log(`\n💱 Currency Conversion Check:`);
+    console.log(`   Needs conversion: ${needsCurrencyConversion}`);
+    if (needsCurrencyConversion) {
+      console.log(`   Exchange rate (Cost10): ${cost10}`);
+    }
+    
+    // DeliveryIdList logic: If all checkboxes are false, check DeliveryIdList
+    if (!selectYD && !selectUretim && !selectLocal) {
+      console.log(`\n📦 All checkboxes are false, checking DeliveryIdList...`);
+      
+      // Parse DeliveryIdList (comma-separated string)
+      const deliveryIds = deliveryIdList
+        .split(',')
+        .map(id => id.trim())
+        .filter(id => id.length > 0);
+      
+      console.log(`   DeliveryIds: [${deliveryIds.join(', ')}]`);
+      
+      if (deliveryIds.length === 1) {
+        const deliveryId = deliveryIds[0];
+        console.log(`   Single delivery found: ${deliveryId}`);
+        
+        if (deliveryId === '1') {
+          selectLocal = true;
+          console.log(`   ✅ DeliveryId=1 → SelectLocal=true`);
+        } else if (deliveryId === '2') {
+          selectUretim = true;
+          console.log(`   ✅ DeliveryId=2 → SelectUretim=true`);
+        } else if (deliveryId === '4') {
+          selectYD = true;
+          console.log(`   ✅ DeliveryId=4 → SelectYD=true`);
+        } else {
+          console.log(`   ⚠️  Unknown DeliveryId: ${deliveryId}`);
+        }
+      } else {
+        console.log(`   ⚠️  Multiple or no deliveries found, no checkbox override`);
+      }
+    }
+    
     let cost5 = 0;
     
     // 1. Calculate Cost5
@@ -656,10 +711,11 @@ router.post('/calculate-cost-fields', async (req, res) => {
       console.log(`\n⚠️  No condition met for Cost5 calculation, remains 0`);
     }
 
-    // Convert Cost5 to TRY if it's in USD (< 100 indicates USD)
-    if (cost5 > 0 && cost5 < 100) {
-      cost5 = cost5 * exchangeRate;
-      console.log(`💱 Cost5 converted to TRY: ${cost5 / exchangeRate} USD × ${exchangeRate} = ${cost5} TRY`);
+    // Convert Cost5 to TRY if currency conversion is needed and Cost5 is in USD (< 100)
+    if (needsCurrencyConversion && cost5 > 0 && cost5 < 100) {
+      const originalCost5 = cost5;
+      cost5 = cost5 * cost10;
+      console.log(`💱 Cost5 converted to TRY: ${originalCost5} USD × ${cost10} = ${cost5} TRY`);
     }
 
     // Determine multiplier: Quantity if > 0, otherwise NumericValue1

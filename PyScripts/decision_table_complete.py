@@ -1,28 +1,43 @@
 """
 Decision Table for Costing Calculations - PLM Python Script
-Updated: 2026-02-02
-Total Entries: 402
+Updated: 2026-02-13
+Total Entries: 402 (with fallback logic for non-matching entries)
 Lookup by: MarkaId, AltKategoriId, SegmentId, LifeStyleGrupId
 
+PRE-VALIDATION:
+- Only processes for MarkaId = 4 or 8 (others return 0)
+- Only processes for LifeStyleGrupId = 1, 2, 3, or 8 (others return 0)
+
 INPUT VARIABLES:
-- MarkaId (Integer)
-- AltKategoriId (Integer)
-- SegmentId (Integer)
-- LifeStyleGrupId (Integer)
-- PSF (String) - Comes from input
+- MarkaId (Integer) - Brand ID (must be 4 or 8)
+- AltKategoriId (Integer) - Sub-category ID
+- SegmentId (Integer) - Segment ID
+- LifeStyleGrupId (Integer) - LifeStyle Group ID (must be 1, 2, 3, or 8)
+- PSF (String) - Retail price from input (optional)
 - Cost1 (String) - Optional cost input
 
 OUTPUT VARIABLES:
 - AlimFiyat_TRY (Number) - Calculated or from Cost1 (rounded to 2 decimals)
 - Cost2 (Number) - Calculated from AlimFiyat_TRY (rounded to 2 decimals)
 - HedefYd (Number) - Calculated based on MarkaId (rounded to 2 decimals)
-- HesaplamaKuru (Number) - From decision table
-- KDV (Number) - From decision table
-- KumasHedefMaliyet (Number) - Calculated (rounded to 2 decimals)
-- MU (Number) - From decision table
-- SegmentPSF (Number) - From decision table
+- HesaplamaKuru (Number) - Exchange rate (from table or fallback: 55)
+- KDV (Number) - VAT rate (from table or fallback: 0.1)
+- KumasHedefMaliyet (Number) - Target fabric cost (rounded to 2 decimals)
+- MU (Number) - Markup (from table or fallback based on LifeStyleGrupId)
+- SegmentPSF (Number) - Segment retail price (from table or 0 for fallback)
 
-CALCULATION LOGIC:
+LOGIC FLOW:
+1. Pre-validate MarkaId and LifeStyleGrupId
+2. Try to find exact match in decision table
+3. If found, use table values
+4. If NOT found, use FALLBACK values:
+   - KDV = 0.1
+   - HesaplamaKuru = 55
+   - Sarf = 1.5
+   - MU = 3.0 (if LifeStyleGrupId = 2) or 4.7 (if LifeStyleGrupId = 1, 3, 8)
+   - SegmentPSF = 0
+
+CALCULATION SCENARIOS:
 
 Scenario 1: PSF exists, Cost1 = 0
 1. AlimFiyat_TRY = round((PSF / (1 + KDV)) / MU, 2)
@@ -39,6 +54,9 @@ Scenario 2: Cost1 > 0
 4. HedefYd (rounded to 2 decimals):
    - If MarkaId = 4: Cost2 / 1.38 / 1.1
    - If MarkaId = 8: Cost2 / 1.51 / 1.1
+
+Scenario 3: Neither PSF nor Cost1 provided
+- Returns all zeros
 """
 
 # Decision table data will be inserted here by user
@@ -77,23 +95,63 @@ except:
 # Create lookup key
 key = f"{marka_id}-{alt_kategori_id}-{segment_id}-{lifestyle_grup_id}"
 
-# Find in decision table
-result = DECISION_MAP.get(key, None)
-
-if result:
-    # Found match in decision table
-    # Get values from table
-    mu = result['MU']
-    kdv = result['KDV']
-    hesaplama_kuru = result['HesaplamaKuru']
-    sarf = result['Sarf']
-    segment_psf_value = result['SegmentPSF']
+# PRE-VALIDATION: Check if MarkaId and LifeStyleGrupId are valid
+# Only process for MarkaId 4 or 8, and LifeStyleGrupId 1, 2, 3, or 8
+if marka_id not in [4, 8]:
+    # Invalid brand - return zeros
+    AlimFiyat_TRY = 0
+    Cost2 = 0
+    HedefYd = 0
+    HesaplamaKuru = 0
+    KDV = 0
+    KumasHedefMaliyet = 0
+    MU = 0
+    SegmentPSF = 0
+elif lifestyle_grup_id not in [1, 2, 3, 8]:
+    # Invalid lifestyle group - return zeros
+    AlimFiyat_TRY = 0
+    Cost2 = 0
+    HedefYd = 0
+    HesaplamaKuru = 0
+    KDV = 0
+    KumasHedefMaliyet = 0
+    MU = 0
+    SegmentPSF = 0
+else:
+    # Find in decision table
+    result = DECISION_MAP.get(key, None)
     
-    # Output SegmentPSF from table
-    SegmentPSF = segment_psf_value
-    MU = mu
-    KDV = kdv
-    HesaplamaKuru = hesaplama_kuru
+    if result:
+        # Found match in decision table - use table values
+        mu = result['MU']
+        kdv = result['KDV']
+        hesaplama_kuru = result['HesaplamaKuru']
+        sarf = result['Sarf']
+        segment_psf_value = result['SegmentPSF']
+        
+        # Output SegmentPSF from table
+        SegmentPSF = segment_psf_value
+        MU = mu
+        KDV = kdv
+        HesaplamaKuru = hesaplama_kuru
+    else:
+        # Not found in decision table - use FALLBACK logic
+        # Fallback values based on LifeStyleGrupId
+        if lifestyle_grup_id == 2:
+            mu = 3.0
+        else:  # lifestyle_grup_id in [1, 3, 8]
+            mu = 4.7
+        
+        kdv = 0.1
+        hesaplama_kuru = 55
+        sarf = 1.5
+        segment_psf_value = 0  # No default SegmentPSF for fallback
+        
+        # Output fallback values
+        SegmentPSF = segment_psf_value
+        MU = mu
+        KDV = kdv
+        HesaplamaKuru = hesaplama_kuru
     
     # SCENARIO 1: PSF exists, Cost1 = 0
     if psf_value > 0 and cost1_value == 0:
@@ -106,7 +164,7 @@ if result:
         AlimFiyat_TRY = round(cost1_value, 2)
         
     else:
-        # Neither PSF nor Cost1 provided
+        # SCENARIO 3: Neither PSF nor Cost1 provided
         AlimFiyat_TRY = 0
     
     # Calculate Cost2 (rounded to 2 decimals)
@@ -116,8 +174,14 @@ if result:
         Cost2 = 0
     
     # Calculate KumasHedefMaliyet (rounded to 2 decimals)
-    if Cost2 > 0 and sarf > 0:
-        KumasHedefMaliyet = round((Cost2 * 0.4) / sarf, 2)
+    # Use sarf from table if found, otherwise use fallback (1.5)
+    if result:
+        sarf_value = result['Sarf']
+    else:
+        sarf_value = 1.5
+    
+    if Cost2 > 0 and sarf_value > 0:
+        KumasHedefMaliyet = round((Cost2 * 0.4) / sarf_value, 2)
     else:
         KumasHedefMaliyet = 0
     
@@ -128,19 +192,8 @@ if result:
         elif marka_id == 8:
             HedefYd = round(Cost2 / 1.51 / 1.1, 2)
         else:
-            # Default calculation for other brands
+            # Default calculation (should not reach here due to pre-validation)
             HedefYd = round(Cost2 / 1.38 / 1.1, 2)
     else:
         HedefYd = 0
-
-else:
-    # Not found in decision table - return zeros
-    AlimFiyat_TRY = 0
-    Cost2 = 0
-    HedefYd = 0
-    HesaplamaKuru = 0
-    KDV = 0
-    KumasHedefMaliyet = 0
-    MU = 0
-    SegmentPSF = 0
 
