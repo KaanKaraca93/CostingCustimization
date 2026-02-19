@@ -549,7 +549,7 @@ router.post('/calculate-cost-fields', async (req, res) => {
     console.log(`📋 StyleId: ${styleId}`);
 
     // Build OData query to get required fields
-    const extendedFieldsExpand = 'STYLEEXTENDEDFIELDVALUES($select=StyleId,Id,ExtFldId,NumberValue,CheckboxValue;$orderby=ExtFldId;$expand=STYLEEXTENDEDFIELDS($select=Name))';
+    const extendedFieldsExpand = 'STYLEEXTENDEDFIELDVALUES($select=StyleId,Id,ExtFldId,NumberValue,CheckboxValue,DropdownValues;$orderby=ExtFldId;$expand=STYLEEXTENDEDFIELDS($select=Name))';
     const odataQuery = `$select=StyleId,StyleCode,BrandId,Quantity,NumericValue1,DeliveryIdList&$filter=styleid eq ${styleId}&$expand=${extendedFieldsExpand}`;
 
     console.log('🌐 Fetching data from PLM...');
@@ -592,10 +592,17 @@ router.post('/calculate-cost-fields', async (req, res) => {
           numValue = parseFloat(field.NumberValue) || 0;
         }
         
+        // Parse DropdownValues - handle null, empty string, or actual value
+        let dropdownValue = null;
+        if (field.DropdownValues !== null && field.DropdownValues !== undefined && field.DropdownValues !== '') {
+          dropdownValue = parseInt(field.DropdownValues) || null;
+        }
+        
         fieldMap[fieldName] = {
           id: field.Id,
           extFldId: field.ExtFldId,
           value: numValue,
+          dropdownValue: dropdownValue,
           checkBoxValue: field.CheckboxValue || false  // Note: lowercase 'b' in API
         };
       }
@@ -621,10 +628,10 @@ router.post('/calculate-cost-fields', async (req, res) => {
     let selectUretim = fieldMap['SelectUretim']?.checkBoxValue || false;
     let selectLocal = fieldMap['SelectLocal']?.checkBoxValue || false;
     
-    // Currency fields (for conversion check)
-    const cur2 = fieldMap['Cur2']?.value || null;
-    const cur3 = fieldMap['Cur3']?.value || null;
-    const cur4 = fieldMap['Cur4']?.value || null;
+    // Currency dropdown values (for conversion check)
+    const cur2 = fieldMap['Cur2']?.dropdownValue || null;  // Cost4's currency
+    const cur3 = fieldMap['Cur3']?.dropdownValue || null;  // Cost6's currency
+    const cur4 = fieldMap['Cur4']?.dropdownValue || null;  // Cost7's currency
 
     console.log('\n📋 Input Values:');
     console.log(`   Alım Fiyatı_TRY: ${alimFiyatTRY}`);
@@ -636,18 +643,33 @@ router.post('/calculate-cost-fields', async (req, res) => {
     console.log(`   SelectYD: ${selectYD}`);
     console.log(`   SelectUretim: ${selectUretim}`);
     console.log(`   SelectLocal: ${selectLocal}`);
-    console.log(`   Cur2: ${cur2}, Cur3: ${cur3}, Cur4: ${cur4}`);
+    console.log(`   Cur2 (Cost4 currency): ${cur2}`);
+    console.log(`   Cur3 (Cost6 currency): ${cur3}`);
+    console.log(`   Cur4 (Cost7 currency): ${cur4}`);
 
     // ========== CALCULATION LOGIC ==========
     
-    // Check if currency conversion is needed (Cur2, Cur3, or Cur4 = 840, 842, 844, 846)
+    // Determine which currency to check based on selected option
+    let activeCurrency = null;
+    let activeCurrencyName = '';
+    
+    if (selectYD) {
+      activeCurrency = cur2;  // Cost4's currency
+      activeCurrencyName = 'Cur2 (Cost4)';
+    } else if (selectLocal) {
+      activeCurrency = cur3;  // Cost6's currency
+      activeCurrencyName = 'Cur3 (Cost6)';
+    } else if (selectUretim) {
+      activeCurrency = cur4;  // Cost7's currency
+      activeCurrencyName = 'Cur4 (Cost7)';
+    }
+    
+    // Check if currency conversion is needed (active currency = 840, 842, 844, 846)
     const currencyConversionCodes = [840, 842, 844, 846];
-    const needsCurrencyConversion = 
-      (cur2 && currencyConversionCodes.includes(cur2)) ||
-      (cur3 && currencyConversionCodes.includes(cur3)) ||
-      (cur4 && currencyConversionCodes.includes(cur4));
+    const needsCurrencyConversion = activeCurrency && currencyConversionCodes.includes(activeCurrency);
     
     console.log(`\n💱 Currency Conversion Check:`);
+    console.log(`   Active currency: ${activeCurrencyName} = ${activeCurrency}`);
     console.log(`   Needs conversion: ${needsCurrencyConversion}`);
     if (needsCurrencyConversion) {
       console.log(`   Exchange rate (Cost10): ${cost10}`);
@@ -671,16 +693,26 @@ router.post('/calculate-cost-fields', async (req, res) => {
         
         if (deliveryId === '1') {
           selectLocal = true;
-          console.log(`   ✅ DeliveryId=1 → SelectLocal=true`);
+          activeCurrency = cur3;  // Cost6's currency
+          activeCurrencyName = 'Cur3 (Cost6)';
+          console.log(`   ✅ DeliveryId=1 → SelectLocal=true, checking Cur3`);
         } else if (deliveryId === '2') {
           selectUretim = true;
-          console.log(`   ✅ DeliveryId=2 → SelectUretim=true`);
+          activeCurrency = cur4;  // Cost7's currency
+          activeCurrencyName = 'Cur4 (Cost7)';
+          console.log(`   ✅ DeliveryId=2 → SelectUretim=true, checking Cur4`);
         } else if (deliveryId === '4') {
           selectYD = true;
-          console.log(`   ✅ DeliveryId=4 → SelectYD=true`);
+          activeCurrency = cur2;  // Cost4's currency
+          activeCurrencyName = 'Cur2 (Cost4)';
+          console.log(`   ✅ DeliveryId=4 → SelectYD=true, checking Cur2`);
         } else {
           console.log(`   ⚠️  Unknown DeliveryId: ${deliveryId}`);
         }
+        
+        // Re-check currency conversion after DeliveryIdList logic
+        const needsConversion = activeCurrency && currencyConversionCodes.includes(activeCurrency);
+        console.log(`   Currency conversion needed: ${needsConversion} (${activeCurrencyName} = ${activeCurrency})`);
       } else {
         console.log(`   ⚠️  Multiple or no deliveries found, no checkbox override`);
       }
@@ -711,11 +743,16 @@ router.post('/calculate-cost-fields', async (req, res) => {
       console.log(`\n⚠️  No condition met for Cost5 calculation, remains 0`);
     }
 
-    // Convert Cost5 to TRY if currency conversion is needed and Cost5 is in USD (< 100)
-    if (needsCurrencyConversion && cost5 > 0 && cost5 < 100) {
+    // Convert Cost5 to TRY if active currency requires conversion and Cost5 is in USD (< 100)
+    // Re-calculate needsCurrencyConversion with final active currency
+    const finalNeedsCurrencyConversion = activeCurrency && currencyConversionCodes.includes(activeCurrency);
+    
+    if (finalNeedsCurrencyConversion && cost5 > 0 && cost5 < 100) {
       const originalCost5 = cost5;
       cost5 = cost5 * cost10;
-      console.log(`💱 Cost5 converted to TRY: ${originalCost5} USD × ${cost10} = ${cost5} TRY`);
+      console.log(`💱 Cost5 converted to TRY: ${originalCost5} USD × ${cost10} (from ${activeCurrencyName}) = ${cost5} TRY`);
+    } else if (cost5 > 0 && cost5 < 100) {
+      console.log(`⚠️  Cost5 < 100 but currency conversion NOT needed (${activeCurrencyName} = ${activeCurrency})`);
     }
 
     // Determine multiplier: Quantity if > 0, otherwise NumericValue1
