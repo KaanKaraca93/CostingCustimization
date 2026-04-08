@@ -382,7 +382,7 @@ class PLMService {
    */
   buildStyleBomQuery(styleId) {
     // Using exact format that works in Postman, with Type and Formula added for calculations
-    const bomExpand = 'StyleBOM($expand=BOMLine($select=Id,Quantity,Code,Name,Placement2,PurchasePrice,CurrencyId))';
+    const bomExpand = 'StyleBOM($expand=BOMLine($select=Id,Quantity,Code,Name,Placement2,PurchasePrice,CurrencyId,NumericField8))';
     
     const costingExpand = 'STYLECOSTING($expand=STYLECOSTELEMENTS($expand=STYLECOSTINGSUPPLIERVALS;$select=Id,StyleCostingId,Code,Name,Value,Type,Formula),STYLECOSTSUPPLIERS($expand=STYLESUPPLIER($select=Id,SupplierId,Code,SupplierName)); $select=Id, CostModelId, CurrencyId)';
 
@@ -445,6 +445,24 @@ class PLMService {
   parseStyleBomData(styleData) {
     const parsed = this.parseStyleCostingData(styleData);
     
+    // Extract dynamic currency rates from extended fields
+    // Cost10 → CurrencyId=3 (EUR/USD) rate, Cost14 → CurrencyId=1 rate
+    const currencyRates = { 4: 1 }; // TRY always 1
+    if (styleData.StyleExtendedFieldValues) {
+      for (const field of styleData.StyleExtendedFieldValues) {
+        const name = field.StyleExtendedFields?.Name;
+        const value = parseFloat(field.NumberValue) || null;
+        if (name === 'Cost10' && value) {
+          currencyRates[3] = value;
+          console.log(`💱 Dynamic rate CurrencyId=3 (Cost10): ${value}`);
+        } else if (name === 'Cost14' && value) {
+          currencyRates[1] = value;
+          console.log(`💱 Dynamic rate CurrencyId=1 (Cost14): ${value}`);
+        }
+      }
+    }
+    parsed.currencyRates = currencyRates;
+
     // Add BOM lines - collect from all StyleBOM entries
     if (styleData.StyleBOM && styleData.StyleBOM.length > 0) {
       parsed.bom = {
@@ -461,7 +479,8 @@ class PLMService {
             name: line.Name,
             placement2: line.Placement2,  // Multi-select field, comma-separated
             purchasePrice: line.PurchasePrice || 0,
-            currencyId: line.CurrencyId
+            currencyId: line.CurrencyId,
+            numericField8: line.NumericField8 || 0  // Ek maliyet (same currency as line)
           }));
           parsed.bom.bomLines.push(...lines);
         }

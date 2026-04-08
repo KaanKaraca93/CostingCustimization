@@ -55,8 +55,12 @@ function processBomToCosting(styleData) {
       supplierValues: []
     };
 
+    // Get dynamic currency rates from PLM extended fields (Cost10 → CurrencyId=3, Cost14 → CurrencyId=1)
+    const currencyRates = styleData.currencyRates || {};
+    console.log(`💱 Currency Rates: CurrencyId=1 → ${currencyRates[1] || 'fallback:64'}, CurrencyId=3 → ${currencyRates[3] || 'fallback:55'}, CurrencyId=4 → 1`);
+
     // Process BOM lines and calculate cost element values
-    const costElementValues = processBomLines(bomLines);
+    const costElementValues = processBomLines(bomLines, currencyRates);
     
     console.log('\n📊 Calculated Cost Element Values:');
     Object.keys(costElementValues).forEach(code => {
@@ -258,11 +262,18 @@ function processBomToCosting(styleData) {
 /**
  * Process BOM lines and calculate cost element values
  * @param {Array} bomLines - Array of BOM line objects
+ * @param {Object} currencyRates - Dynamic currency rates from PLM { 1: rate, 3: rate, 4: 1 }
  * @returns {Object} Object with cost element codes as keys and calculated values
  */
-function processBomLines(bomLines) {
+function processBomLines(bomLines, currencyRates = {}) {
   console.log('\n🔍 Processing BOM Lines...');
-  
+
+  // Dynamic rate resolver: PLM extended fields önce, sonra hardcoded fallback
+  const getRate = (currencyId) => {
+    if (currencyRates[currencyId] !== undefined) return currencyRates[currencyId];
+    return getCurrencyRate(currencyId); // fallback to hardcoded
+  };
+
   const result = {};
   const allDefinedPlacements = getAllDefinedPlacements();
   
@@ -326,18 +337,23 @@ function processBomLines(bomLines) {
     const item = anaKumasItems[0]; // Take first if multiple
     result['KPRC'] = item.purchasePrice;
     result['KSARF'] = item.quantity;
-    result['KKUR'] = getCurrencyRate(item.currencyId);
-    console.log(`✅ Ana Kumaş: KPRC=${item.purchasePrice}, KSARF=${item.quantity}, KKUR=${result['KKUR']}`);
+    result['KKUR'] = getRate(item.currencyId);
+    result['KEKM'] = (item.numericField8 || 0) * getRate(item.currencyId);  // Ek maliyet → TRY
+    console.log(`✅ Ana Kumaş: KPRC=${item.purchasePrice}, KSARF=${item.quantity}, KKUR=${result['KKUR']}, KEKM=${result['KEKM']}`);
   }
 
-  // Process Astar (weighted average)
+  // Process Astar (weighted average, normalized to Currency 3)
   if (astarItems.length > 0) {
-    const normalized = normalizeItemsToCurrency(astarItems, 3);
+    const normalized = normalizeItemsToCurrency(astarItems, 3, getRate);
     const weighted = calculateWeightedAverage(normalized);
     result['APRC'] = weighted.averagePrice;
     result['ASARF'] = weighted.totalQuantity;
-    result['AKUR'] = getCurrencyRate(3);
-    console.log(`✅ Astar: APRC=${weighted.averagePrice.toFixed(2)}, ASARF=${weighted.totalQuantity.toFixed(2)}, AKUR=${result['AKUR']}`);
+    result['AKUR'] = getRate(3);
+    // AEKM: sum of all numericField8 values converted to TRY
+    result['AEKM'] = astarItems.reduce((sum, item) => {
+      return sum + (item.numericField8 || 0) * getRate(item.currencyId);
+    }, 0);
+    console.log(`✅ Astar: APRC=${weighted.averagePrice.toFixed(2)}, ASARF=${weighted.totalQuantity.toFixed(2)}, AKUR=${result['AKUR']}, AEKM=${result['AEKM'].toFixed(2)}`);
   }
 
   // Process Garni 1 (single item)
@@ -345,8 +361,9 @@ function processBomLines(bomLines) {
     const item = garni1Items[0];
     result['G1PRC'] = item.purchasePrice;
     result['G1SARF'] = item.quantity;
-    result['G1KUR'] = getCurrencyRate(item.currencyId);
-    console.log(`✅ Garni 1: G1PRC=${item.purchasePrice}, G1SARF=${item.quantity}, G1KUR=${result['G1KUR']}`);
+    result['G1KUR'] = getRate(item.currencyId);
+    result['G1EKM'] = (item.numericField8 || 0) * getRate(item.currencyId);  // Ek maliyet → TRY
+    console.log(`✅ Garni 1: G1PRC=${item.purchasePrice}, G1SARF=${item.quantity}, G1KUR=${result['G1KUR']}, G1EKM=${result['G1EKM']}`);
   }
 
   // Process Garni 2 (single item)
@@ -354,46 +371,56 @@ function processBomLines(bomLines) {
     const item = garni2Items[0];
     result['G2PRC'] = item.purchasePrice;
     result['G2SARF'] = item.quantity;
-    result['G2KUR'] = getCurrencyRate(item.currencyId);
-    console.log(`✅ Garni 2: G2PRC=${item.purchasePrice}, G2SARF=${item.quantity}, G2KUR=${result['G2KUR']}`);
+    result['G2KUR'] = getRate(item.currencyId);
+    result['G2EKM'] = (item.numericField8 || 0) * getRate(item.currencyId);  // Ek maliyet → TRY
+    console.log(`✅ Garni 2: G2PRC=${item.purchasePrice}, G2SARF=${item.quantity}, G2KUR=${result['G2KUR']}, G2EKM=${result['G2EKM']}`);
   }
 
-  // Process Garni 3 (weighted average)
+  // Process Garni 3 (weighted average, normalized to Currency 3)
   if (garni3Items.length > 0) {
-    const normalized = normalizeItemsToCurrency(garni3Items, 3);
+    const normalized = normalizeItemsToCurrency(garni3Items, 3, getRate);
     const weighted = calculateWeightedAverage(normalized);
     result['G3PRC'] = weighted.averagePrice;
     result['G3SARF'] = weighted.totalQuantity;
-    result['G3KUR'] = getCurrencyRate(3);
-    console.log(`✅ Garni 3: G3PRC=${weighted.averagePrice.toFixed(2)}, G3SARF=${weighted.totalQuantity.toFixed(2)}, G3KUR=${result['G3KUR']}`);
+    result['G3KUR'] = getRate(3);
+    // G3EKM: sum of all numericField8 values converted to TRY
+    result['G3EKM'] = garni3Items.reduce((sum, item) => {
+      return sum + (item.numericField8 || 0) * getRate(item.currencyId);
+    }, 0);
+    console.log(`✅ Garni 3: G3PRC=${weighted.averagePrice.toFixed(2)}, G3SARF=${weighted.totalQuantity.toFixed(2)}, G3KUR=${result['G3KUR']}, G3EKM=${result['G3EKM'].toFixed(2)}`);
   }
 
   // Process Nakış (price * quantity total, normalized to Currency 3)
   if (nakisItems.length > 0) {
-    const normalized = normalizeItemsToCurrency(nakisItems, 3);
+    const normalized = normalizeItemsToCurrency(nakisItems, 3, getRate);
     const total = normalized.reduce((sum, item) => sum + (item.purchasePrice * item.quantity), 0);
     result['IPRC'] = total;
-    result['IKUR'] = getCurrencyRate(3);
+    result['IKUR'] = getRate(3);
     console.log(`✅ Nakış: IPRC=${total.toFixed(2)}, IKUR=${result['IKUR']}`);
   }
 
   // Process Kemer (price * quantity total, normalized to Currency 3)
   if (kemerItems.length > 0) {
-    const normalized = normalizeItemsToCurrency(kemerItems, 3);
+    const normalized = normalizeItemsToCurrency(kemerItems, 3, getRate);
     const total = normalized.reduce((sum, item) => sum + (item.purchasePrice * item.quantity), 0);
     result['KEPRC'] = total;
-    result['KEKUR'] = getCurrencyRate(3);
-    console.log(`✅ Kemer: KEPRC=${total.toFixed(2)}, KEKUR=${result['KEKUR']}`);
+    result['KEKUR'] = getRate(3);
+    // KEEKM: sum of all numericField8 values converted to TRY
+    result['KEEKM'] = kemerItems.reduce((sum, item) => {
+      return sum + (item.numericField8 || 0) * getRate(item.currencyId);
+    }, 0);
+    console.log(`✅ Kemer: KEPRC=${total.toFixed(2)}, KEKUR=${result['KEKUR']}, KEEKM=${result['KEEKM'].toFixed(2)}`);
   }
 
   // Process Diğer Trims (convert everything to TRY - Currency 4)
+  // Final cost per item = (quantity * purchasePrice + numericField8) * rate
   if (digerItems.length > 0) {
     let totalTRY = 0;
     for (const item of digerItems) {
-      const rate = getCurrencyRate(item.currencyId);
-      const tryValue = item.purchasePrice * item.quantity * rate;
+      const rate = getRate(item.currencyId);
+      const tryValue = (item.purchasePrice * item.quantity + (item.numericField8 || 0)) * rate;
       totalTRY += tryValue;
-      console.log(`   💰 ${item.code}: ${item.purchasePrice} × ${item.quantity} × ${rate} = ${tryValue.toFixed(2)} TRY`);
+      console.log(`   💰 ${item.code}: (${item.purchasePrice} × ${item.quantity} + ${item.numericField8 || 0}) × ${rate} = ${tryValue.toFixed(2)} TRY`);
     }
     result['ATRM'] = totalTRY;
     console.log(`✅ Diğer Trims: ATRM=${totalTRY.toFixed(2)} TRY`);
@@ -406,13 +433,14 @@ function processBomLines(bomLines) {
  * Normalize items to a target currency
  * @param {Array} items - Array of BOM line items
  * @param {number} targetCurrencyId - Target currency ID
+ * @param {Function} getRate - Rate resolver function (dynamic or fallback)
  * @returns {Array} Array of items with prices normalized to target currency
  */
-function normalizeItemsToCurrency(items, targetCurrencyId) {
-  const targetRate = getCurrencyRate(targetCurrencyId);
+function normalizeItemsToCurrency(items, targetCurrencyId, getRate = getCurrencyRate) {
+  const targetRate = getRate(targetCurrencyId);
   
   return items.map(item => {
-    const currentRate = getCurrencyRate(item.currencyId);
+    const currentRate = getRate(item.currencyId);
     const normalizedPrice = (item.purchasePrice * currentRate) / targetRate;
     
     return {
